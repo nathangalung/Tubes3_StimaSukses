@@ -1,6 +1,7 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 import os
-from src.utils.wsl_path_converter import open_file_in_default_app
+import platform
+import subprocess
 
 class SkillBadge(QtWidgets.QLabel):
     """Skill badge widget"""
@@ -16,6 +17,23 @@ class SkillBadge(QtWidgets.QLabel):
             margin: 5px;
             font-weight: bold;
         """)
+
+def open_file_in_default_app(file_path):
+    """buka file dengan aplikasi default sistem"""
+    try:
+        system = platform.system()
+        
+        if system == "Windows":
+            os.startfile(file_path)
+        elif system == "Darwin":  # macos
+            subprocess.run(["open", file_path])
+        else:  # linux/unix
+            subprocess.run(["xdg-open", file_path])
+        
+        return True
+    except Exception as e:
+        print(f"❌ Error membuka file: {e}")
+        return False
 
 class SummaryView(QtWidgets.QDialog):
     """CV summary display dialog"""
@@ -324,12 +342,16 @@ class SummaryView(QtWidgets.QDialog):
         
     def _view_cv(self):
         """Open the CV file"""
-        if os.path.exists(self.cv_path):
-            success = open_file_in_default_app(self.cv_path)
-            if not success:
-                QtWidgets.QMessageBox.warning(self, "Error", f"Could not open CV file: {self.cv_path}")
-        else:
-            QtWidgets.QMessageBox.warning(self, "Error", f"CV file not found: {self.cv_path}")
+        try:
+            if os.path.exists(self.cv_path):
+                success = open_file_in_default_app(self.cv_path)
+                if not success:
+                    QtWidgets.QMessageBox.warning(self, "Error", f"Could not open CV file: {self.cv_path}")
+            else:
+                QtWidgets.QMessageBox.warning(self, "Error", f"CV file not found: {self.cv_path}")
+        except Exception as e:
+            print(f"❌ Error view CV: {e}")
+            QtWidgets.QMessageBox.critical(self, "Error", f"Error opening CV: {str(e)}")
 
 # FlowLayout for skills badges
 class FlowLayout(QtWidgets.QLayout):
