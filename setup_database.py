@@ -3,15 +3,17 @@ from mysql.connector import Error
 import pandas as pd
 import os
 
+# --- Konfigurasi ---
+# GANTI DENGAN DETAIL KONEKSI MYSQL ANDA
 MYSQL_CONFIG = {
-    'host': 'localhost',
-    'user': 'root',              # username MySQL
-    'password': 'danen332',      # password MySQL
-    'database': 'kaggle_resumes' # nama database
+    'host': 'localhost',        # atau alamat IP server MySQL Anda
+    'user': 'root',             # username MySQL Anda
+    'password': 'danen332', # password MySQL Anda
+    'database': 'kaggle_resumes' # Nama database yang Anda buat di Langkah 1
 }
 
 # Path ke file dan folder dataset
-BASE_PATH = r'C:\Users\DANENDRA\OneDrive\Documents\ITB\SEMESTER 4\IF2211 Strategi Algoritma\coba2' # ganti path sendiri
+BASE_PATH = r'C:\Users\DANENDRA\OneDrive\Documents\ITB\SEMESTER 4\IF2211 Strategi Algoritma\coba2'
 CSV_PATH = os.path.join(BASE_PATH, 'Resume', 'Resume.csv')
 PDF_FOLDER_PATH = os.path.join(BASE_PATH, 'data')
 
