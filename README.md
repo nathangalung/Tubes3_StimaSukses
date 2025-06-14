@@ -266,9 +266,9 @@ Password: StimaSukses
 
 **Tim Stima Sukses - IF2211 Strategi Algoritma ITB**
 
-- **[Nama 1]** - NIM: [NIM] - KMP & Database
-- **[Nama 2]** - NIM: [NIM] - Boyer-Moore & UI  
-- **[Nama 3]** - NIM: [NIM] - Aho-Corasick & Regex
+- **[Muhammad Raihaan Perdana]** - NIM: [13523124] - KMP & Database Integration
+- **[Danendra Shafi Athallah]** - NIM: [13523136] - Boyer-Moore & UI Development  
+- **[Bryan P. Hutagalung]** - NIM: [18222130] - Aho-Corasick & Regex Extraction
 
 ## 📝 License
 
@@ -276,4 +276,4 @@ Tugas Besar 3 IF2211 Strategi Algoritma - Institut Teknologi Bandung
 
 ---
 
-**Note**: Database schema otomatis dibuat saat `docker-compose up -d`. Pastikan Docker running dan uv terinstall sebelum memulai aplikasi.
+**Note**: Database schema otomatis dibuat saat `docker-compose up -d`. Pastikan Docker running dan uv terinstall sebelum memulai aplikasi.Expo panel of Naru Jataka. Text ID. K Inside.
