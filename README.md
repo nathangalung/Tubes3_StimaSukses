@@ -244,9 +244,9 @@ cd src && uv run -c "from database.repo import ResumeRepository; print(f'Found {
 
 **Tim Stima Sukses - IF2211 Strategi Algoritma ITB**
 
-- **[Nama 1]** - NIM: [NIM] - KMP & Database Integration
-- **[Nama 2]** - NIM: [NIM] - Boyer-Moore & UI Development  
-- **[Nama 3]** - NIM: [NIM] - Aho-Corasick & Regex Extraction
+- **[Muhammad Raihaan Perdana]** - NIM: [13523124] - KMP & Database Integration
+- **[Danendra Shafi Athallah]** - NIM: [13523136] - Boyer-Moore & UI Development  
+- **[Bryan P. Hutagalung]** - NIM: [18222130] - Aho-Corasick & Regex Extraction
 
 ## 📝 License
 
