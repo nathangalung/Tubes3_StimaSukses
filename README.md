@@ -11,27 +11,27 @@ Aplikasi ATS (Applicant Tracking System) untuk mencari dan mencocokkan kata kunc
 
 ### 1. Knuth-Morris-Pratt (KMP)
 - **Kompleksitas**: O(n + m)
-- **Keunggulan**: Efisien untuk pattern tunggal, tidak ada backtracking
+- **Keunggulan**: Efisien untuk pattern tunggal
 - **Penggunaan**: Pencarian kata kunci exact matching
 
 ### 2. Boyer-Moore (BM)
-- **Kompleksitas**: O(nm) worst case, rata-rata lebih cepat
-- **Keunggulan**: Sangat efisien untuk pattern panjang
-- **Penggunaan**: Pencarian pattern panjang dengan skip optimization
+- **Kompleksitas**: O(nm) worst case
+- **Keunggulan**: Efisien untuk pattern panjang
+- **Penggunaan**: Skip optimization pencarian
 
 ### 3. Aho-Corasick (Bonus)
 - **Kompleksitas**: O(n + m + z)
-- **Keunggulan**: Multi-pattern matching dalam satu pass
-- **Penggunaan**: Pencarian banyak kata kunci sekaligus
+- **Keunggulan**: Multi-pattern matching
+- **Penggunaan**: Banyak kata kunci sekaligus
 
 ### 4. Levenshtein Distance
 - **Kompleksitas**: O(n × m)
-- **Keunggulan**: Fuzzy matching untuk typo dan variasi
-- **Penggunaan**: Fallback ketika exact matching tidak menemukan hasil
+- **Keunggulan**: Fuzzy matching typo
+- **Penggunaan**: Fallback exact matching
 
 ## 🛠️ Requirements
 
-- **Docker & Docker Compose** (untuk PostgreSQL database)
+- **Docker & Docker Compose** (untuk MySQL database)
 - **uv** (Python package manager)
 - **Python 3.9+**
 
@@ -43,136 +43,148 @@ git clone <repository-url>
 cd Tubes3_StimaSukses
 ```
 
-### 2. Start Database dengan Auto-Setup
+### 2. Start MySQL Database
 ```bash
-# Start PostgreSQL dengan auto-initialization
-docker-compose up -d
-# Database schema akan otomatis dibuat dari file database/init/
+# Start MySQL dengan auto-initialization
+./start_mysql.sh
+# atau
+docker-compose up -d mysql
 ```
 
 ### 3. Setup dan Jalankan Aplikasi
 ```bash
 cd src
 uv sync
+uv run migrate_data.py  # Setup database schema
 uv run main.py
 ```
 
 ## 🗄️ Database Management
 
 ### Auto-Initialization
-Database schema dibuat otomatis saat container start menggunakan:
-- `database/init/01_init_schema.sql` - Schema dan table creation
-- `database/init/02_init_permissions.sh` - Permissions setup
+Database schema dibuat otomatis menggunakan:
+- `tubes3_seeding.sql` - Schema dan data lengkap
+- `database/init/01_init_schema.sql` - Schema creation
+- MySQL Docker container auto-setup
 
 ### Manual Database Operations
 ```bash
 # Cek status database
-docker exec tubes3_postgres pg_isready -U postgres
+docker exec ats_mysql mysqladmin ping -h localhost
 
 # Akses database langsung
-docker exec -it tubes3_postgres psql -U postgres -d kaggle_resumes
+docker exec -it ats_mysql mysql -u ats_user -p kaggle_resumes
 
 # Re-run schema jika diperlukan
-docker exec -i tubes3_postgres psql -U postgres -d kaggle_resumes < database/init/01_init_schema.sql
+docker exec -i ats_mysql mysql -u ats_user -p kaggle_resumes < tubes3_seeding.sql
 
-# Setup permissions ulang
-docker exec tubes3_postgres bash /docker-entrypoint-initdb.d/02_init_permissions.sh
+# Reset database
+docker-compose down -v && docker-compose up -d
 ```
 
 ### Database Schema
 ```sql
--- Table utama untuk CV data
-resumes (
-    id VARCHAR(255) PRIMARY KEY,
-    category VARCHAR(255),        -- kategori CV (ENGINEERING, HR, etc.)
-    file_path TEXT,              -- path ke file PDF
-    name TEXT,                   -- nama kandidat
-    phone VARCHAR(50),           -- nomor telepon
-    birthdate DATE,              -- tanggal lahir
-    address TEXT,                -- alamat
-    created_at TIMESTAMP,        -- waktu dibuat
-    updated_at TIMESTAMP         -- waktu update terakhir
-)
+-- Table utama untuk applicant
+CREATE TABLE ApplicantProfile (
+    applicant_id INT AUTO_INCREMENT PRIMARY KEY,
+    first_name VARCHAR(50),
+    last_name VARCHAR(50),
+    date_of_birth DATE,
+    address VARCHAR(255),
+    phone_number VARCHAR(20)
+);
+
+-- Table untuk CV details
+CREATE TABLE ApplicationDetail (
+    detail_id INT AUTO_INCREMENT PRIMARY KEY,
+    applicant_id INT NOT NULL,
+    application_role VARCHAR(100),
+    cv_path TEXT,
+    FOREIGN KEY (applicant_id) REFERENCES ApplicantProfile(applicant_id)
+);
 ```
 
 ### Sample Data Insert
 ```bash
 # Insert sample data untuk testing
-docker exec -i tubes3_postgres psql -U postgres -d kaggle_resumes << 'EOF'
-INSERT INTO resumes (id, category, file_path, name, phone, address) VALUES 
-('CV001', 'ENGINEERING', 'data/ENGINEERING/engineer_cv_001.pdf', 'John Doe', '+1234567890', '123 Main St'),
-('CV002', 'DATA_SCIENCE', 'data/DATA_SCIENCE/datascientist_cv_001.pdf', 'Jane Smith', '+0987654321', '456 Oak Ave'),
-('CV003', 'HR', 'data/HR/hr_cv_001.pdf', 'Bob Johnson', '+1122334455', '789 Pine Rd')
-ON CONFLICT (id) DO NOTHING;
+docker exec -i ats_mysql mysql -u ats_user -p kaggle_resumes << 'EOF'
+INSERT INTO ApplicantProfile (first_name, last_name, address, phone_number) VALUES 
+('John', 'Doe', '123 Main St', '+1234567890'),
+('Jane', 'Smith', '456 Oak Ave', '+0987654321');
+
+INSERT INTO ApplicationDetail (applicant_id, application_role, cv_path) VALUES 
+(1, 'Software Developer', 'data/INFORMATION-TECHNOLOGY/cv001.pdf'),
+(2, 'Data Scientist', 'data/INFORMATION-TECHNOLOGY/cv002.pdf');
 EOF
 ```
 
-### Bulk Data Import
+### Data Migration
 ```bash
-# Jika ada script Python untuk bulk import
+# Run data migration script
 cd src
-uv run utils/import_cv_data.py
+uv run migrate_data.py
 
-# Atau import dari CSV (jika tersedia)
-docker exec -i tubes3_postgres psql -U postgres -d kaggle_resumes -c "\COPY resumes FROM '/path/to/data.csv' WITH CSV HEADER;"
+# Verify data
+uv run -c "from database.repo import ResumeRepository; print(f'Found {len(ResumeRepository().get_all_resumes())} CVs')"
 ```
 
 ## 📁 Struktur Data
 
-Pastikan folder `data/` berisi CV files dengan struktur:
+Pastikan folder `data/` berisi CV files:
 ```
 data/
 ├── ACCOUNTANT/
 ├── ENGINEERING/
+├── INFORMATION-TECHNOLOGY/
 ├── HR/
-├── DATA_SCIENCE/
+├── FINANCE/
 └── ... (kategori lainnya)
 ```
 
 ## 💻 Cara Penggunaan
 
-1. **Input Keywords**: Masukkan kata kunci dipisah koma (contoh: "Python, SQL, React")
+1. **Input Keywords**: Masukkan kata kunci dipisah koma
 2. **Pilih Algoritma**: KMP, BM, AC, atau Levenshtein
-3. **Set Parameters**: Jumlah hasil (1-50) dan threshold fuzzy (50%-100%)
+3. **Set Parameters**: Jumlah hasil dan threshold fuzzy
 4. **Search**: Klik tombol "🔍 Search CVs"
-5. **View Results**: Lihat CV cards dengan opsi Summary dan View CV
+5. **View Results**: Lihat CV cards dengan Summary
 
 ## 🔧 Fitur Utama
 
 - **Exact Matching**: KMP, Boyer-Moore, Aho-Corasick
-- **Fuzzy Matching**: Levenshtein Distance untuk typo handling
-- **PDF Processing**: Ekstraksi teks otomatis dari CV PDF
-- **Database Integration**: PostgreSQL untuk menyimpan metadata CV
-- **Information Extraction**: Regex untuk extract skills, experience, education
-- **Performance Timing**: Monitoring waktu eksekusi algoritma
+- **Fuzzy Matching**: Levenshtein Distance
+- **PDF Processing**: Ekstraksi teks otomatis
+- **Database Integration**: MySQL untuk metadata CV
+- **Information Extraction**: Regex untuk extract data
+- **Performance Timing**: Monitoring waktu eksekusi
 
 ## 🐳 Docker Management
 
 ### Container Operations
 ```bash
-# Start services
-docker-compose up -d
+# Start MySQL
+./start_mysql.sh
 
 # Stop services  
 docker-compose down
 
 # View logs
-docker-compose logs postgres
+docker-compose logs mysql
 
-# Restart dengan rebuild
-docker-compose down && docker-compose up -d --build
+# Restart container
+docker-compose restart mysql
 ```
 
 ### Database Backup & Restore
 ```bash
 # Backup database
-docker exec tubes3_postgres pg_dump -U postgres kaggle_resumes > backup.sql
+docker exec ats_mysql mysqldump -u ats_user -p kaggle_resumes > backup.sql
 
 # Restore database
-docker exec -i tubes3_postgres psql -U postgres -d kaggle_resumes < backup.sql
+docker exec -i ats_mysql mysql -u ats_user -p kaggle_resumes < backup.sql
 
-# Reset database (hapus semua data)
-docker exec tubes3_postgres psql -U postgres -d kaggle_resumes -c "TRUNCATE TABLE resumes RESTART IDENTITY CASCADE;"
+# Reset database
+docker-compose down -v && docker-compose up -d
 ```
 
 ## 🧪 Testing Algorithms
@@ -184,17 +196,17 @@ uv run algorithm/bm.py       # Test Boyer-Moore
 uv run algorithm/aho_corasick.py  # Test Aho-Corasick
 
 # Test database connection
-uv run -c "from database.config_simple import DatabaseConfig; print('DB OK' if DatabaseConfig().test_connection() else 'DB FAIL')"
+uv run -c "from database.mysql_config import MySQLConfig; print('DB OK' if MySQLConfig().test_connection() else 'DB FAIL')"
 ```
 
 ## 📊 Performance
 
 | Algorithm | Pattern Length | Best For |
 |-----------|----------------|----------|
-| KMP | Any | Single pattern, guaranteed O(n+m) |
-| Boyer-Moore | Long (>3 chars) | Large texts, can skip characters |
-| Aho-Corasick | Multiple | Many patterns simultaneously |
-| Levenshtein | Any | Typo tolerance, fuzzy matching |
+| KMP | Any | Single pattern O(n+m) |
+| Boyer-Moore | Long (>3 chars) | Skip characters |
+| Aho-Corasick | Multiple | Many patterns |
+| Levenshtein | Any | Typo tolerance |
 
 ## 🔧 Troubleshooting
 
@@ -202,16 +214,16 @@ uv run -c "from database.config_simple import DatabaseConfig; print('DB OK' if D
 ```bash
 # Container not starting
 docker-compose down && docker-compose up -d
-docker-compose logs postgres
+docker-compose logs mysql
 
 # Database connection refused
-docker exec tubes3_postgres pg_isready -U postgres
+docker exec ats_mysql mysqladmin ping -h localhost
 
 # Schema not applied
-docker exec -i tubes3_postgres psql -U postgres -d kaggle_resumes < database/init/01_init_schema.sql
+cd src && uv run migrate_data.py
 
-# Permissions issues
-docker exec tubes3_postgres bash /docker-entrypoint-initdb.d/02_init_permissions.sh
+# Reset everything
+docker-compose down -v && docker-compose up -d
 ```
 
 ### Application Issues
@@ -220,33 +232,43 @@ docker exec tubes3_postgres bash /docker-entrypoint-initdb.d/02_init_permissions
 uv sync --reinstall
 
 # Performance issues
-# - Reduce CV count in data folder for testing
+# - Reduce CV count untuk testing
 # - Use higher fuzzy threshold (80%+)
-# - Choose appropriate algorithm for pattern length
+# - Choose appropriate algorithm
 ```
 
 ### Verify Setup
 ```bash
-# Check all services
-docker ps | grep tubes3
+# Check MySQL container
+docker ps | grep ats_mysql
 
 # Check database tables
-docker exec tubes3_postgres psql -U postgres -d kaggle_resumes -c "\dt"
+docker exec ats_mysql mysql -u ats_user -p kaggle_resumes -e "SHOW TABLES;"
 
 # Check sample data
-docker exec tubes3_postgres psql -U postgres -d kaggle_resumes -c "SELECT COUNT(*) FROM resumes;"
+docker exec ats_mysql mysql -u ats_user -p kaggle_resumes -e "SELECT COUNT(*) FROM ApplicationDetail;"
 
 # Test application connectivity
 cd src && uv run -c "from database.repo import ResumeRepository; print(f'Found {len(ResumeRepository().get_all_resumes())} CVs')"
+```
+
+## 🔗 MySQL Connection Info
+
+```bash
+Host: localhost
+Port: 3306
+Database: kaggle_resumes
+Username: ats_user
+Password: StimaSukses
 ```
 
 ## 👥 Authors
 
 **Tim Stima Sukses - IF2211 Strategi Algoritma ITB**
 
-- **[Nama 1]** - NIM: [NIM] - KMP & Database Integration
-- **[Nama 2]** - NIM: [NIM] - Boyer-Moore & UI Development  
-- **[Nama 3]** - NIM: [NIM] - Aho-Corasick & Regex Extraction
+- **[Nama 1]** - NIM: [NIM] - KMP & Database
+- **[Nama 2]** - NIM: [NIM] - Boyer-Moore & UI  
+- **[Nama 3]** - NIM: [NIM] - Aho-Corasick & Regex
 
 ## 📝 License
 
@@ -254,4 +276,4 @@ Tugas Besar 3 IF2211 Strategi Algoritma - Institut Teknologi Bandung
 
 ---
 
-**Note**: Database schema otomatis dibuat saat `docker-compose up -d`. Pastikan Docker running dan uv terinstall sebelum memulai aplikasi.Expo panel of Naru Jataka. Text ID. K Inside.
+**Note**: Database schema otomatis dibuat saat `docker-compose up -d`. Pastikan Docker running dan uv terinstall sebelum memulai aplikasi.

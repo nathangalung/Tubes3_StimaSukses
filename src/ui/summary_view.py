@@ -1,19 +1,22 @@
-# src/ui/summary_view.py
+"""CV summary dialog"""
+
 from PyQt5 import QtWidgets, QtCore
 from database.models import CVSummary, JobHistory, Education
 
 class SummaryView(QtWidgets.QDialog):
-    """dialog untuk menampilkan summary cv dengan job history dan education lengkap"""
+    """CV summary dialog"""
     
-    view_cv_requested = QtCore.pyqtSignal(str)  # resume_id
+    view_cv_requested = QtCore.pyqtSignal(str)
     
-    def __init__(self, parent=None):
+    def __init__(self, cv_summary: CVSummary = None, parent=None):
         super().__init__(parent)
         self.resume_id = None
         self.setup_ui()
-        
+        if cv_summary:
+            self.show_summary(cv_summary.name, cv_summary)
+    
     def setup_ui(self):
-        """setup user interface dengan comprehensive layout"""
+        """Setup user interface"""
         self.setWindowTitle("CV Summary")
         self.setModal(True)
         self.resize(700, 800)
@@ -22,11 +25,11 @@ class SummaryView(QtWidgets.QDialog):
         layout.setSpacing(20)
         layout.setContentsMargins(20, 20, 20, 20)
         
-        # header with name
+        # Header
         header = self._create_header()
         layout.addWidget(header)
         
-        # scroll area for content
+        # Scroll area
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
@@ -39,7 +42,7 @@ class SummaryView(QtWidgets.QDialog):
             }
         """)
         
-        # content widget
+        # Content widget
         self.content_widget = QtWidgets.QWidget()
         self.content_layout = QtWidgets.QVBoxLayout(self.content_widget)
         self.content_layout.setSpacing(15)
@@ -48,12 +51,12 @@ class SummaryView(QtWidgets.QDialog):
         scroll.setWidget(self.content_widget)
         layout.addWidget(scroll)
         
-        # action buttons
+        # Action buttons
         buttons = self._create_buttons()
         layout.addWidget(buttons)
     
     def _create_header(self) -> QtWidgets.QWidget:
-        """create header dengan candidate name"""
+        """Create header with name"""
         header = QtWidgets.QWidget()
         header.setStyleSheet("""
             QWidget {
@@ -81,11 +84,11 @@ class SummaryView(QtWidgets.QDialog):
         return header
     
     def _create_buttons(self) -> QtWidgets.QWidget:
-        """create action buttons"""
+        """Create action buttons"""
         buttons_widget = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(buttons_widget)
         
-        # view cv button
+        # View CV button
         view_cv_btn = QtWidgets.QPushButton("📄 View Full CV")
         view_cv_btn.setStyleSheet("""
             QPushButton {
@@ -110,7 +113,7 @@ class SummaryView(QtWidgets.QDialog):
         
         layout.addStretch()
         
-        # close button
+        # Close button
         close_btn = QtWidgets.QPushButton("✖ Close")
         close_btn.setStyleSheet("""
             QPushButton {
@@ -136,55 +139,53 @@ class SummaryView(QtWidgets.QDialog):
         return buttons_widget
     
     def show_summary(self, resume_id: str, summary: CVSummary):
-        """show comprehensive cv summary dengan semua detail"""
+        """Show CV summary"""
         self.resume_id = resume_id
         
-        print(f"📋 displaying summary for {summary.name}")
-        print(f"   skills: {len(summary.skills)}")
-        print(f"   job history: {len(summary.job_history)}")
-        print(f"   education: {len(summary.education)}")
+        print(f"📋 Displaying summary for {summary.name}")
+        print(f"   Skills: {len(summary.skills)}")
+        print(f"   Jobs: {len(summary.job_history)}")
+        print(f"   Education: {len(summary.education)}")
         
-        # update header
+        # Update header
         self.name_label.setText(f"📋 {summary.name}")
         
-        # clear previous content
+        # Clear previous content
         while self.content_layout.count():
             child = self.content_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
         
-        # contact information
+        # Add sections
         if summary.contact_info:
             self._add_contact_section(summary.contact_info)
         
-        # professional summary/overview
         if summary.summary:
-            self._add_section("💼 Professional Summary", summary.summary, "#e8f4fd")
+            self._add_section("💼 Professional Summary", summary.summary)
         
-        # skills section
         if summary.skills:
             self._add_skills_section(summary.skills)
+        else:
+            self._add_section("⚡ Skills", "No skills found")
         
-        # job history section - comprehensive
         if summary.job_history:
             self._add_job_history_section(summary.job_history)
         else:
-            self._add_section("💼 Work Experience", "No work experience information found in CV.", "#fff3cd")
+            self._add_section("💼 Work Experience", "No work experience found")
         
-        # education section - comprehensive  
         if summary.education:
             self._add_education_section(summary.education)
         else:
-            self._add_section("🎓 Education", "No education information found in CV.", "#fff3cd")
+            self._add_section("🎓 Education", "No education found")
         
-        # add stretch at end
+        # Add stretch
         self.content_layout.addStretch()
         
-        # show dialog
+        # Show dialog
         self.show()
     
     def _add_contact_section(self, contact_info: dict):
-        """add contact information section"""
+        """Add contact information section"""
         if not contact_info:
             return
             
@@ -202,7 +203,7 @@ class SummaryView(QtWidgets.QDialog):
         layout.setSpacing(8)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # title
+        # Title
         title_label = QtWidgets.QLabel("📞 Contact Information")
         title_label.setStyleSheet("""
             QLabel {
@@ -210,58 +211,63 @@ class SummaryView(QtWidgets.QDialog):
                 font-weight: bold;
                 color: #2c3e50;
                 background-color: transparent;
-                margin-bottom: 8px;
             }
         """)
         layout.addWidget(title_label)
         
-        # contact details
+        # Contact details
         contact_layout = QtWidgets.QHBoxLayout()
         
-        contact_items = []
         if 'email' in contact_info:
-            contact_items.append(f"✉️ {contact_info['email']}")
-        if 'phone' in contact_info:
-            contact_items.append(f"📱 {contact_info['phone']}")
-        if 'address' in contact_info:
-            contact_items.append(f"📍 {contact_info['address']}")
+            email_label = QtWidgets.QLabel(f"✉️ {contact_info['email']}")
+            email_label.setStyleSheet(self._get_contact_style())
+            contact_layout.addWidget(email_label)
         
-        for item in contact_items:
-            item_label = QtWidgets.QLabel(item)
-            item_label.setStyleSheet("""
-                QLabel {
-                    font-size: 12px;
-                    color: #495057;
-                    background-color: white;
-                    padding: 6px 10px;
-                    border-radius: 15px;
-                    margin: 2px;
-                }
-            """)
-            contact_layout.addWidget(item_label)
+        if 'phone' in contact_info:
+            phone_label = QtWidgets.QLabel(f"📱 {contact_info['phone']}")
+            phone_label.setStyleSheet(self._get_contact_style())
+            contact_layout.addWidget(phone_label)
+        
+        if 'address' in contact_info:
+            address_label = QtWidgets.QLabel(f"📍 {contact_info['address']}")
+            address_label.setStyleSheet(self._get_contact_style())
+            contact_layout.addWidget(address_label)
         
         contact_layout.addStretch()
         layout.addLayout(contact_layout)
         
         self.content_layout.addWidget(section)
     
-    def _add_section(self, title: str, content: str, bg_color: str = "#ecf0f1"):
-        """add general section dengan custom background"""
+    def _get_contact_style(self):
+        """Get contact item style"""
+        return """
+            QLabel {
+                font-size: 12px;
+                color: #495057;
+                background-color: white;
+                padding: 6px 10px;
+                border-radius: 15px;
+                margin: 2px;
+            }
+        """
+    
+    def _add_section(self, title: str, content: str):
+        """Add general section"""
         section = QtWidgets.QWidget()
-        section.setStyleSheet(f"""
-            QWidget {{
-                background-color: {bg_color};
+        section.setStyleSheet("""
+            QWidget {
+                background-color: #ecf0f1;
                 border-radius: 8px;
                 padding: 15px;
                 border-left: 4px solid #3498db;
-            }}
+            }
         """)
         
         layout = QtWidgets.QVBoxLayout(section)
         layout.setSpacing(10)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # title
+        # Title
         title_label = QtWidgets.QLabel(title)
         title_label.setStyleSheet("""
             QLabel {
@@ -269,19 +275,17 @@ class SummaryView(QtWidgets.QDialog):
                 font-weight: bold;
                 color: #2c3e50;
                 background-color: transparent;
-                margin-bottom: 5px;
             }
         """)
         layout.addWidget(title_label)
         
-        # content
+        # Content
         content_label = QtWidgets.QLabel(content)
         content_label.setStyleSheet("""
             QLabel {
                 font-size: 13px;
                 color: #495057;
                 background-color: transparent;
-                line-height: 1.5;
                 padding: 5px 0;
             }
         """)
@@ -291,7 +295,7 @@ class SummaryView(QtWidgets.QDialog):
         self.content_layout.addWidget(section)
     
     def _add_skills_section(self, skills: list):
-        """add skills section dengan tags style"""
+        """Add skills section"""
         section = QtWidgets.QWidget()
         section.setStyleSheet("""
             QWidget {
@@ -306,8 +310,8 @@ class SummaryView(QtWidgets.QDialog):
         layout.setSpacing(10)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # title
-        title_label = QtWidgets.QLabel(f"⚡ Skills & Competencies ({len(skills)} items)")
+        # Title
+        title_label = QtWidgets.QLabel(f"⚡ Skills ({len(skills)} items)")
         title_label.setStyleSheet("""
             QLabel {
                 font-size: 16px;
@@ -318,13 +322,13 @@ class SummaryView(QtWidgets.QDialog):
         """)
         layout.addWidget(title_label)
         
-        # skills container with flow layout
+        # Skills tags
         skills_widget = QtWidgets.QWidget()
         skills_layout = QtWidgets.QHBoxLayout(skills_widget)
         skills_layout.setContentsMargins(0, 0, 0, 0)
         skills_layout.setSpacing(8)
         
-        # create skill tags (max 12 to avoid overflow)
+        # Show max 12 skills
         displayed_skills = skills[:12]
         colors = ['#007bff', '#28a745', '#dc3545', '#ffc107', '#17a2b8', '#6f42c1']
         
@@ -345,7 +349,7 @@ class SummaryView(QtWidgets.QDialog):
             skill_tag.setAlignment(QtCore.Qt.AlignCenter)
             skills_layout.addWidget(skill_tag)
             
-            # break to new line after 6 items
+            # Break line after 6
             if (i + 1) % 6 == 0 and i + 1 < len(displayed_skills):
                 skills_layout.addStretch()
                 break
@@ -353,7 +357,7 @@ class SummaryView(QtWidgets.QDialog):
         skills_layout.addStretch()
         layout.addWidget(skills_widget)
         
-        # show remaining count if more than 12
+        # Show remaining count
         if len(skills) > 12:
             more_label = QtWidgets.QLabel(f"... and {len(skills) - 12} more skills")
             more_label.setStyleSheet("""
@@ -362,7 +366,6 @@ class SummaryView(QtWidgets.QDialog):
                     color: #6c757d;
                     font-style: italic;
                     background-color: transparent;
-                    margin-top: 5px;
                 }
             """)
             layout.addWidget(more_label)
@@ -370,7 +373,7 @@ class SummaryView(QtWidgets.QDialog):
         self.content_layout.addWidget(section)
     
     def _add_job_history_section(self, job_history: list):
-        """add comprehensive job history section"""
+        """Add job history section"""
         section = QtWidgets.QWidget()
         section.setStyleSheet("""
             QWidget {
@@ -385,7 +388,7 @@ class SummaryView(QtWidgets.QDialog):
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # title
+        # Title
         title_label = QtWidgets.QLabel(f"💼 Work Experience ({len(job_history)} positions)")
         title_label.setStyleSheet("""
             QLabel {
@@ -397,7 +400,7 @@ class SummaryView(QtWidgets.QDialog):
         """)
         layout.addWidget(title_label)
         
-        # job entries
+        # Job entries
         for i, job in enumerate(job_history):
             job_widget = self._create_job_entry(job, i + 1)
             layout.addWidget(job_widget)
@@ -405,7 +408,7 @@ class SummaryView(QtWidgets.QDialog):
         self.content_layout.addWidget(section)
     
     def _create_job_entry(self, job: JobHistory, index: int) -> QtWidgets.QWidget:
-        """create detailed job entry widget"""
+        """Create job entry widget"""
         job_widget = QtWidgets.QWidget()
         job_widget.setStyleSheet("""
             QWidget {
@@ -420,10 +423,10 @@ class SummaryView(QtWidgets.QDialog):
         layout.setSpacing(6)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # job header
+        # Job header
         header_layout = QtWidgets.QHBoxLayout()
         
-        # position title
+        # Position
         position_label = QtWidgets.QLabel(f"{index}. {job.position}")
         position_label.setStyleSheet("""
             QLabel {
@@ -435,9 +438,9 @@ class SummaryView(QtWidgets.QDialog):
         """)
         header_layout.addWidget(position_label)
         
-        # date range
+        # Date range
         if job.start_date or job.end_date:
-            date_range = f"{job.start_date or 'N/A'} - {job.end_date or 'N/A'}"
+            date_range = f"{job.start_date or 'N/A'} - {job.end_date or 'Present'}"
             date_label = QtWidgets.QLabel(date_range)
             date_label.setStyleSheet("""
                 QLabel {
@@ -453,7 +456,7 @@ class SummaryView(QtWidgets.QDialog):
         header_layout.addStretch()
         layout.addLayout(header_layout)
         
-        # company
+        # Company
         company_label = QtWidgets.QLabel(f"🏢 {job.company}")
         company_label.setStyleSheet("""
             QLabel {
@@ -465,7 +468,7 @@ class SummaryView(QtWidgets.QDialog):
         """)
         layout.addWidget(company_label)
         
-        # description if available
+        # Description
         if job.description and len(job.description.strip()) > 10:
             desc_label = QtWidgets.QLabel(f"📝 {job.description}")
             desc_label.setStyleSheet("""
@@ -474,7 +477,6 @@ class SummaryView(QtWidgets.QDialog):
                     color: #6c757d;
                     background-color: transparent;
                     margin-left: 10px;
-                    margin-top: 4px;
                     font-style: italic;
                 }
             """)
@@ -484,7 +486,7 @@ class SummaryView(QtWidgets.QDialog):
         return job_widget
     
     def _add_education_section(self, education: list):
-        """add comprehensive education section"""
+        """Add education section"""
         section = QtWidgets.QWidget()
         section.setStyleSheet("""
             QWidget {
@@ -499,7 +501,7 @@ class SummaryView(QtWidgets.QDialog):
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # title
+        # Title
         title_label = QtWidgets.QLabel(f"🎓 Education ({len(education)} entries)")
         title_label.setStyleSheet("""
             QLabel {
@@ -511,7 +513,7 @@ class SummaryView(QtWidgets.QDialog):
         """)
         layout.addWidget(title_label)
         
-        # education entries
+        # Education entries
         for i, edu in enumerate(education):
             edu_widget = self._create_education_entry(edu, i + 1)
             layout.addWidget(edu_widget)
@@ -519,7 +521,7 @@ class SummaryView(QtWidgets.QDialog):
         self.content_layout.addWidget(section)
     
     def _create_education_entry(self, edu: Education, index: int) -> QtWidgets.QWidget:
-        """create detailed education entry widget"""
+        """Create education entry widget"""
         edu_widget = QtWidgets.QWidget()
         edu_widget.setStyleSheet("""
             QWidget {
@@ -534,10 +536,10 @@ class SummaryView(QtWidgets.QDialog):
         layout.setSpacing(6)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # education header
+        # Education header
         header_layout = QtWidgets.QHBoxLayout()
         
-        # degree
+        # Degree
         degree_label = QtWidgets.QLabel(f"{index}. {edu.degree}")
         degree_label.setStyleSheet("""
             QLabel {
@@ -549,9 +551,9 @@ class SummaryView(QtWidgets.QDialog):
         """)
         header_layout.addWidget(degree_label)
         
-        # year
-        if edu.year:
-            year_label = QtWidgets.QLabel(edu.year)
+        # Year
+        if hasattr(edu, 'graduation_year') and edu.graduation_year:
+            year_label = QtWidgets.QLabel(edu.graduation_year)
             year_label.setStyleSheet("""
                 QLabel {
                     font-size: 11px;
@@ -566,7 +568,7 @@ class SummaryView(QtWidgets.QDialog):
         header_layout.addStretch()
         layout.addLayout(header_layout)
         
-        # institution
+        # Institution
         institution_label = QtWidgets.QLabel(f"🏫 {edu.institution}")
         institution_label.setStyleSheet("""
             QLabel {
@@ -578,26 +580,24 @@ class SummaryView(QtWidgets.QDialog):
         """)
         layout.addWidget(institution_label)
         
-        # details if available
-        if edu.details and len(edu.details.strip()) > 10 and edu.details != edu.institution:
-            details_label = QtWidgets.QLabel(f"📋 {edu.details}")
-            details_label.setStyleSheet("""
+        # GPA if available
+        if hasattr(edu, 'gpa') and edu.gpa:
+            gpa_label = QtWidgets.QLabel(f"📊 GPA: {edu.gpa}")
+            gpa_label.setStyleSheet("""
                 QLabel {
                     font-size: 11px;
                     color: #6c757d;
                     background-color: transparent;
                     margin-left: 10px;
-                    margin-top: 4px;
                     font-style: italic;
                 }
             """)
-            details_label.setWordWrap(True)
-            layout.addWidget(details_label)
+            layout.addWidget(gpa_label)
         
         return edu_widget
     
     def _on_view_cv_clicked(self):
-        """handle view cv button click"""
+        """Handle view CV button"""
         if self.resume_id:
-            print(f"📄 requesting to view cv for resume {self.resume_id}")
+            print(f"📄 Requesting to view CV: {self.resume_id}")
             self.view_cv_requested.emit(self.resume_id)

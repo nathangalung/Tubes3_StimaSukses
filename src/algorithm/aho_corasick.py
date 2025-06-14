@@ -1,124 +1,154 @@
+"""Aho-Corasick string matching algorithm"""
+
+from typing import List, Dict, Set
+from collections import deque, defaultdict
+
+class TrieNode:
+    """Trie node for AC automaton"""
+    
+    def __init__(self):
+        self.children = {}
+        self.failure = None
+        self.output = []
+        self.is_end = False
+
 class AhoCorasick:
-    def __init__(self, keywords=None):
-        """inisialisasi aho-corasick automaton"""
-        self.goto = [{}]  # trie structure
-        self.output = [[] for _ in range(1)]  # output untuk setiap node
-        self.failure = [0]  # failure links
+    """ Aho-Corasick implementation"""
+    
+    def __init__(self):
+        self.root = TrieNode()
+        self.patterns = []
+    
+    def build_automaton(self, patterns: List[str]):
+        """Build AC automaton"""
+        self.patterns = [p.lower() for p in patterns if p.strip()]
         
-        if keywords:
-            self._build_trie(keywords)
-            self._build_failure_links()
-
-    def _build_trie(self, keywords):
-        """bangun trie dari keywords"""
-        for keyword in keywords:
-            if not keyword:  # skip empty keywords
-                continue
-                
-            node = 0
-            for char in keyword:
-                if char not in self.goto[node]:
-                    self.goto[node][char] = len(self.goto)
-                    self.goto.append({})
-                    self.output.append([])
-                    self.failure.append(0)
-                node = self.goto[node][char]
-            
-            # simpan keyword di end node
-            self.output[node].append(keyword)
-
-    def _build_failure_links(self):
-        """bangun failure links menggunakan bfs"""
-        from collections import deque
-        queue = deque()
+        if not self.patterns:
+            return
         
-        # level 1 nodes (children of root)
-        for char, node in self.goto[0].items():
-            queue.append(node)
-            self.failure[node] = 0  # failure dari root children ke root
-
-        # bfs untuk level selanjutnya
-        while queue:
-            current_node = queue.popleft()
-            
-            for char, next_node in self.goto[current_node].items():
-                queue.append(next_node)
-                
-                # cari failure link untuk next_node
-                fail_node = self.failure[current_node]
-                
-                # traverse failure links sampai ketemu yang ada transisi untuk char
-                while fail_node != 0 and char not in self.goto[fail_node]:
-                    fail_node = self.failure[fail_node]
-                
-                # set failure link
-                if char in self.goto[fail_node]:
-                    self.failure[next_node] = self.goto[fail_node][char]
-                else:
-                    self.failure[next_node] = 0  # back to root
-                
-                # merge output dari failure node
-                failure_output = self.output[self.failure[next_node]]
-                self.output[next_node].extend(failure_output)
-
-    def search(self, text):
-        """cari semua keywords dalam text"""
-        if not text:
+        # Build trie
+        self._build_trie()
+        
+        # Build failure links
+        self._build_failure_links()
+    
+    def search_multiple(self, text: str, patterns: List[str]) -> Dict[str, List[int]]:
+        """Search multiple patterns"""
+        if not text or not patterns:
             return {}
         
-        results = {}  # keyword: [positions]
-        current_node = 0
-
-        for i, char in enumerate(text):
-            # follow failure links jika tidak ada transisi
-            while current_node != 0 and char not in self.goto[current_node]:
-                current_node = self.failure[current_node]
+        # Build automaton
+        self.build_automaton(patterns)
+        
+        if not self.patterns:
+            return {}
+        
+        # Search
+        results = defaultdict(list)
+        text_lower = text.lower()
+        current_node = self.root
+        
+        for i, char in enumerate(text_lower):
+            # Follow failure links
+            while current_node != self.root and char not in current_node.children:
+                current_node = current_node.failure
             
-            # move to next state jika ada transisi
-            if char in self.goto[current_node]:
-                current_node = self.goto[current_node][char]
+            # Move to next state
+            if char in current_node.children:
+                current_node = current_node.children[char]
             
-            # check output untuk node saat ini
-            if self.output[current_node]:
-                for keyword in self.output[current_node]:
-                    if keyword not in results:
-                        results[keyword] = []
-                    # posisi awal keyword = posisi akhir - panjang + 1
-                    start_pos = i - len(keyword) + 1
-                    results[keyword].append(start_pos)
-
-        return results
+            # Check for matches
+            temp_node = current_node
+            while temp_node != self.root:
+                for pattern in temp_node.output:
+                    start_pos = i - len(pattern) + 1
+                    results[pattern].append(start_pos)
+                temp_node = temp_node.failure
+        
+        return dict(results)
     
-    def search_multiple(self, text, keywords):
-        """search multiple keywords - interface untuk kompatibilitas"""
-        # rebuild automaton dengan keywords baru
-        self.__init__(keywords)
-        return self.search(text)
+    def _build_trie(self):
+        """Build trie structure"""
+        for pattern in self.patterns:
+            current = self.root
+            
+            for char in pattern:
+                if char not in current.children:
+                    current.children[char] = TrieNode()
+                current = current.children[char]
+            
+            current.is_end = True
+            current.output.append(pattern)
+    
+    def _build_failure_links(self):
+        """Build failure links using BFS"""
+        queue = deque()
+        
+        # Initialize root children
+        for child in self.root.children.values():
+            child.failure = self.root
+            queue.append(child)
+        
+        # BFS to build failure links
+        while queue:
+            current = queue.popleft()
+            
+            for char, child in current.children.items():
+                queue.append(child)
+                
+                # Find failure link
+                failure_node = current.failure
+                while failure_node != self.root and char not in failure_node.children:
+                    failure_node = failure_node.failure
+                
+                if char in failure_node.children and failure_node.children[char] != child:
+                    child.failure = failure_node.children[char]
+                else:
+                    child.failure = self.root
+                
+                # Copy output from failure node
+                child.output.extend(child.failure.output)
 
-# testing function
+# Test function
 def test_aho_corasick():
-    """test aho-corasick implementation"""
-    keywords = ["he", "she", "his", "hers"]
-    text = "ushers"
+    """Test AC implementation"""
+    ac = AhoCorasick()
     
-    ac = AhoCorasick(keywords)
-    results = ac.search(text)
+    # Test case 1: Multiple patterns
+    text = "python programming with python and java"
+    patterns = ["python", "java", "programming"]
+    
+    results = ac.search_multiple(text, patterns)
     
     print("=== AHO-CORASICK TEST ===")
-    print(f"Keywords: {keywords}")
     print(f"Text: '{text}'")
+    print(f"Patterns: {patterns}")
     print(f"Results: {results}")
     
-    # expected: {'she': [2], 'he': [3], 'hers': [1]}
-    expected = {'she': [2], 'he': [3], 'hers': [1]}
+    # Verify results
+    expected = {
+        'python': [0, 24],
+        'java': [35],
+        'programming': [7]
+    }
     
-    if results == expected:
-        print("✅ Test PASSED")
-    else:
-        print("❌ Test FAILED")
-        print(f"Expected: {expected}")
+    success = True
+    for pattern, expected_positions in expected.items():
+        if pattern in results:
+            if results[pattern] != expected_positions:
+                print(f"❌ {pattern}: expected {expected_positions}, got {results[pattern]}")
+                success = False
+            else:
+                print(f"✅ {pattern}: {results[pattern]}")
+        else:
+            print(f"❌ {pattern}: not found")
+            success = False
     
-    return results == expected
+    return success
 
 if __name__ == "__main__":
-    test_aho_corasick()
+    success = test_aho_corasick()
+    if success:
+        print("🎉 Aho-Corasick implementation is CORRECT!")
+    else:
+        print("❌ Aho-Corasick needs fixes!")

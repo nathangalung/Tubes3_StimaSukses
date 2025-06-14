@@ -4,7 +4,7 @@ This package contains database configuration, models, and repository classes
 for the ATS CV Search application.
 """
 
-from .config_simple import DatabaseConfig
+from .mysql_config import MySQLConfig
 from .repo import ResumeRepository
 
-__all__ = ['DatabaseConfig', 'ResumeRepository']
+__all__ = ['MySQLConfig', 'ResumeRepository']

@@ -1,6 +1,7 @@
-# src/controller/search.py
-from typing import List, Tuple
-from database.models import SearchResult, SearchTimingInfo
+"""CV search controller"""
+from typing import List, Tuple, Dict
+import time
+from database.models import SearchResult
 from database.repo import ResumeRepository
 from utils.pdf_extractor import PDFExtractor
 from utils.timer import SearchTimer
@@ -8,220 +9,263 @@ from algorithm.kmp import KMPMatcher
 from algorithm.bm import BoyerMooreMatcher
 from algorithm.aho_corasick import AhoCorasick
 from algorithm.levenshtein import LevenshteinMatcher
-import time
 
 class SearchController:
-    """controller untuk operasi pencarian cv dengan algoritma yang tepat"""
+    """CV search controller"""
     
     def __init__(self):
+        # Initialize components
         self.repo = ResumeRepository()
         self.pdf_extractor = PDFExtractor()
         self.timer = SearchTimer()
         
-        # initialize matchers
+        # Algorithm matchers
         self.kmp_matcher = KMPMatcher()
         self.bm_matcher = BoyerMooreMatcher()
         self.aho_corasick = AhoCorasick()
         self.levenshtein_matcher = LevenshteinMatcher()
         
-        # progress callback
+        # Configuration
         self.progress_callback = None
+        self.max_cvs_to_process = 100
+        self.batch_size = 10
         
-        # performance settings - MUCH SMALLER LIMITS FOR SPEED
-        self.max_cvs_to_process = 30  # reduced from 50 to 30 for faster results
-        self.batch_size = 5  # smaller batches for better progress updates
-    
+        # Performance tracking
+        self.algorithm_stats = {
+            'KMP': {'total_time': 0, 'searches': 0},
+            'BM': {'total_time': 0, 'searches': 0},
+            'AC': {'total_time': 0, 'searches': 0},
+            'LEVENSHTEIN': {'total_time': 0, 'searches': 0}
+        }
+
     def set_progress_callback(self, callback):
-        """set callback function untuk progress updates"""
+        """Set progress callback"""
         self.progress_callback = callback
-    
+
     def search_cvs(self, keywords: List[str], algorithm: str = 'KMP', 
                    top_n: int = 10, fuzzy_threshold: float = 0.7) -> Tuple[List[SearchResult], str]:
-        """pencarian cv dengan exact dan fuzzy matching yang optimal"""
+        """Main search function"""
         
-        print(f"🔍 starting search: keywords={keywords}, algorithm={algorithm}, threshold={fuzzy_threshold}")
+        print(f"🔍 Starting search: {keywords}, {algorithm}")
         
-        # reset timer
+        # Initialize timer
         self.timer.reset()
         
-        # ambil semua resume
+        # Get resumes
         all_resumes = self.repo.get_all_resumes()
         if not all_resumes:
-            return [], "no cvs found in database"
+            return [], "No CVs found"
         
-        # limit resumes for performance
+        # Limit for performance
         resumes = all_resumes[:self.max_cvs_to_process]
-        print(f"📄 processing {len(resumes)} resumes (limited from {len(all_resumes)} total)")
+        print(f"📄 Processing {len(resumes)} resumes")
         
-        # jika user pilih levenshtein sebagai algoritma utama
+        # Debug sample paths
+        for i, resume in enumerate(resumes[:3]):
+            print(f"   {i+1}. {resume.id}: {resume.file_path}")
+        
+        # Execute search
         if algorithm.upper() == 'LEVENSHTEIN':
-            print("🔍 using levenshtein as primary algorithm")
-            self.timer.start_fuzzy_search(len(keywords))
-            results = self._fuzzy_search(resumes, keywords, fuzzy_threshold)
-            self.timer.stop_fuzzy_search()
-            
-            # sort and return
-            results.sort(key=lambda x: x.total_matches, reverse=True)
-            top_results = results[:top_n]
-            timing_summary = self.timer.get_search_summary()
-            
-            print(f"🎯 levenshtein search completed with {len(top_results)} results")
-            return top_results, timing_summary
-        
-        # untuk exact matching algorithms (KMP, BM, AC)
-        self.timer.start_exact_search(algorithm, len(resumes))
-        exact_results = self._exact_search_batched(resumes, keywords, algorithm)
-        self.timer.stop_exact_search()
-        
-        print(f"✅ exact search completed with {len(exact_results)} matches")
-        
-        # fuzzy matching sebagai fallback jika ada keyword yang tidak ketemu
-        unfound_keywords = self._get_unfound_keywords(exact_results, keywords)
-        
-        if unfound_keywords and len(exact_results) < top_n:
-            print(f"🔍 starting fuzzy fallback for: {unfound_keywords}")
-            self.timer.start_fuzzy_search(len(unfound_keywords))
-            # limit fuzzy search to fewer CVs
-            fuzzy_resumes = resumes[:200]  # only search top 200 for fuzzy
-            fuzzy_results = self._fuzzy_search(fuzzy_resumes, unfound_keywords, fuzzy_threshold)
-            self.timer.stop_fuzzy_search()
-            combined_results = self._combine_results(exact_results, fuzzy_results)
-            print(f"✅ fuzzy fallback completed. total results: {len(combined_results)}")
+            results = self._execute_fuzzy_search(resumes, keywords, fuzzy_threshold)
         else:
-            combined_results = exact_results
+            results = self._execute_exact_search(resumes, keywords, algorithm, fuzzy_threshold, top_n)
         
-        # sort by total matches
-        combined_results.sort(key=lambda x: x.total_matches, reverse=True)
-        top_results = combined_results[:top_n]
-        timing_summary = self.timer.get_search_summary()
+        # Calculate and sort
+        results = self._calculate_relevance_scores(results, keywords)
+        results.sort(key=lambda x: (x.relevance_score, x.total_matches), reverse=True)
         
-        # show extraction stats
+        # Return top results
+        top_results = results[:top_n]
+        timing_summary = self._generate_timing_summary()
+        
+        print(f"🎯 Completed: {len(top_results)} results")
+        
+        # Show statistics
         stats = self.pdf_extractor.get_extraction_stats()
-        print(f"📊 extraction stats: {stats}")
+        print(f"📊 PDF: {stats['cached_files']} success, {stats['failed_files']} failed")
         
-        print(f"🎯 returning top {len(top_results)} results")
         return top_results, timing_summary
 
-    def _exact_search_batched(self, resumes, keywords, algorithm):
-        """exact matching dengan batch processing untuk performance"""
-        results = []
-        total_resumes = len(resumes)
+    def _execute_exact_search(self, resumes, keywords, algorithm, fuzzy_threshold, top_n):
+        """Execute exact search with fallback"""
         
-        for batch_start in range(0, total_resumes, self.batch_size):
-            batch_end = min(batch_start + self.batch_size, total_resumes)
+        # Start exact search
+        self.timer.start_exact_search(algorithm, len(resumes))
+        start_time = time.time()
+        
+        # Choose algorithm
+        if algorithm.upper() == 'AC':
+            exact_results = self._aho_corasick_search(resumes, keywords)
+        else:
+            exact_results = self._batched_exact_search(resumes, keywords, algorithm)
+        
+        # Update statistics
+        exact_time = time.time() - start_time
+        self.algorithm_stats[algorithm.upper()]['total_time'] += exact_time
+        self.algorithm_stats[algorithm.upper()]['searches'] += 1
+        
+        self.timer.stop_exact_search()
+        print(f"✅ Exact: {len(exact_results)} matches in {exact_time:.3f}s")
+        
+        # Fuzzy fallback if needed
+        unfound_keywords = self._get_unfound_keywords(exact_results, keywords)
+        fuzzy_results = []
+        
+        if unfound_keywords and len(exact_results) < top_n:
+            print(f"🔍 Fuzzy fallback: {unfound_keywords}")
+            self.timer.start_fuzzy_search(len(unfound_keywords))
+            
+            start_time = time.time()
+            fuzzy_resumes = resumes[:50]
+            fuzzy_results = self.__fuzzy_search(fuzzy_resumes, unfound_keywords, fuzzy_threshold)
+            fuzzy_time = time.time() - start_time
+            
+            self.algorithm_stats['LEVENSHTEIN']['total_time'] += fuzzy_time
+            self.algorithm_stats['LEVENSHTEIN']['searches'] += 1
+            
+            self.timer.stop_fuzzy_search()
+            print(f"✅ Fuzzy: {len(fuzzy_results)} matches in {fuzzy_time:.3f}s")
+        
+        return self._combine_results(exact_results, fuzzy_results)
+
+    def _batched_exact_search(self, resumes, keywords, algorithm):
+        """Process resumes in batches"""
+        results = []
+        successful_extractions = 0
+        failed_extractions = 0
+        
+        for batch_start in range(0, len(resumes), self.batch_size):
+            batch_end = min(batch_start + self.batch_size, len(resumes))
             batch_resumes = resumes[batch_start:batch_end]
             
-            # update progress
+            # Update progress
             if self.progress_callback:
-                progress = int((batch_start / total_resumes) * 100)
-                self.progress_callback(f"Processing batch {batch_start//self.batch_size + 1} ({progress}%)")
+                progress = int((batch_start / len(resumes)) * 100)
+                self.progress_callback(f"{algorithm}: batch {batch_start//self.batch_size + 1} ({progress}%)")
             
-            batch_results = self._process_resume_batch(batch_resumes, keywords, algorithm)
+            # Process batch
+            batch_results, batch_success, batch_failed = self._process_resume_batch(batch_resumes, keywords, algorithm)
             results.extend(batch_results)
+            successful_extractions += batch_success
+            failed_extractions += batch_failed
             
-            # early termination if we have enough good results
-            if len(results) >= 50:  # enough results for top_n selection
-                break
-        
+        print(f"📊 Batch: {successful_extractions} success, {failed_extractions} failed")
         return results
 
     def _process_resume_batch(self, batch_resumes, keywords, algorithm):
-        """process a batch of resumes"""
-        batch_results = []
+        """Process single batch"""
+        results = []
+        successful_extractions = 0
+        failed_extractions = 0
         
         for resume in batch_resumes:
             try:
+                # Extract text
                 cv_text = self.pdf_extractor.extract_text_for_matching(resume.file_path)
-                if not cv_text or cv_text in ["large file skipped", "failed file skipped", "timeout skipped", "too many pages skipped", "no text extracted"]:
+                
+                if not cv_text or len(cv_text) < 10:
+                    failed_extractions += 1
                     continue
                 
-                keyword_matches = {}
-                total_matches = 0
-                matched_keywords = []
+                successful_extractions += 1
                 
-                for keyword in keywords:
-                    keyword_lower = keyword.lower().strip()
-                    if not keyword_lower:
-                        continue
-                    
-                    # pilih algoritma
-                    matches = {}
-                    if algorithm.upper() == 'KMP':
-                        positions = self.kmp_matcher.search(cv_text, keyword_lower)
-                        if positions:
-                            matches[keyword_lower] = positions
-                    elif algorithm.upper() == 'BM':
-                        positions = self.bm_matcher.search(cv_text, keyword_lower)
-                        if positions:
-                            matches[keyword_lower] = positions
-                    elif algorithm.upper() == 'AC':
-                        matches = self.aho_corasick.search_multiple(cv_text, [keyword_lower])
-                    else:
-                        # default to KMP
-                        positions = self.kmp_matcher.search(cv_text, keyword_lower)
-                        if positions:
-                            matches[keyword_lower] = positions
-                    
-                    # count matches
-                    if matches and keyword_lower in matches:
-                        match_count = len(matches[keyword_lower])
-                        keyword_matches[keyword] = match_count
-                        total_matches += match_count
-                        matched_keywords.append(keyword)
+                # Debug first extractions
+                if successful_extractions <= 2:
+                    sample_text = cv_text[:100].replace('\n', ' ')
+                    print(f"📝 Sample: {sample_text}...")
                 
-                # add to results if has matches
-                if total_matches > 0:
-                    result = SearchResult(
-                        resume=resume,
-                        keyword_matches=keyword_matches,
-                        total_matches=total_matches,
-                        matched_keywords=matched_keywords
-                    )
-                    batch_results.append(result)
+                # Search using algorithm
+                if algorithm.upper() == 'KMP':
+                    matches = self._kmp_search_keywords(cv_text, keywords)
+                elif algorithm.upper() == 'BM':
+                    matches = self._bm_search_keywords(cv_text, keywords)
+                else:
+                    continue
+                
+                # Process matches
+                if matches:
+                    keyword_matches = {}
+                    total_matches = 0
+                    matched_keywords = []
                     
+                    for keyword, count in matches.items():
+                        if count > 0:
+                            keyword_matches[keyword] = count
+                            total_matches += count
+                            matched_keywords.append(keyword)
+                            print(f"✅ Found '{keyword}' {count}x in {resume.id}")
+                    
+                    if total_matches > 0:
+                        result = SearchResult(
+                            resume=resume,
+                            keyword_matches=keyword_matches,
+                            total_matches=total_matches,
+                            matched_keywords=matched_keywords
+                        )
+                        result.algorithm_used = algorithm.upper()
+                        results.append(result)
+                        
             except Exception as e:
-                print(f"⚠️ error processing {resume.id}: {e}")
+                failed_extractions += 1
+                print(f"⚠️ Error: {resume.id}: {e}")
                 continue
         
-        return batch_results
+        return results, successful_extractions, failed_extractions
 
-    def _fuzzy_search(self, resumes, keywords, threshold):
-        """fuzzy matching dengan limits untuk performance"""
-        results = []
-        total_resumes = min(len(resumes), 100)  # limit fuzzy search
-        limited_resumes = resumes[:total_resumes]
+    def _kmp_search_keywords(self, text, keywords):
+        """Search using KMP"""
+        matches = {}
+        text_lower = text.lower()
         
-        for idx, resume in enumerate(limited_resumes):
-            # progress update
-            if self.progress_callback and idx % 20 == 0:
-                progress = int((idx / total_resumes) * 100)
-                self.progress_callback(f"Fuzzy matching CV {idx+1}/{total_resumes} ({progress}%)")
+        for keyword in keywords:
+            keyword_lower = keyword.lower()
+            positions = self.kmp_matcher.search(text_lower, keyword_lower)
+            matches[keyword] = len(positions)
+        
+        return matches
+
+    def _bm_search_keywords(self, text, keywords):
+        """Search using Boyer-Moore"""
+        matches = {}
+        text_lower = text.lower()
+        
+        for keyword in keywords:
+            keyword_lower = keyword.lower()
+            positions = self.bm_matcher.search(text_lower, keyword_lower)
+            matches[keyword] = len(positions)
+        
+        return matches
+
+    def __fuzzy_search(self, resumes, keywords, threshold):
+        """ fuzzy search"""
+        results = []
+        
+        for idx, resume in enumerate(resumes):
+            if self.progress_callback and idx % 5 == 0:
+                progress = int((idx / len(resumes)) * 100)
+                self.progress_callback(f"Fuzzy: {idx+1}/{len(resumes)} ({progress}%)")
             
             try:
-                cv_text = self.pdf_extractor.extract_text(resume.file_path)
-                if not cv_text or cv_text in ["large file skipped", "failed file skipped", "timeout skipped", "too many pages skipped", "no text extracted"]:
+                cv_text = self.pdf_extractor.extract_text_for_matching(resume.file_path)
+                if not cv_text or len(cv_text) < 10:
                     continue
                 
+                # Fuzzy matching
                 fuzzy_matches = {}
                 total_fuzzy_matches = 0
                 matched_keywords = []
                 
                 for keyword in keywords:
-                    keyword_lower = keyword.lower().strip()
-                    if not keyword_lower:
-                        continue
+                    matches = self.levenshtein_matcher.fuzzy_search_multiple(cv_text, [keyword], threshold)
                     
-                    # use levenshtein matcher
-                    matches = self.levenshtein_matcher.search(cv_text, keyword_lower, threshold)
-                    
-                    if matches and keyword_lower in matches:
-                        match_count = len(matches[keyword_lower])
+                    if matches and keyword.lower() in matches:
                         fuzzy_key = f"{keyword} (fuzzy)"
+                        match_count = len(matches[keyword.lower()])
                         fuzzy_matches[fuzzy_key] = match_count
                         total_fuzzy_matches += match_count
                         matched_keywords.append(fuzzy_key)
+                        print(f"🔍 Fuzzy '{keyword}' {match_count}x in {resume.id}")
                 
-                # add to results if has fuzzy matches
                 if total_fuzzy_matches > 0:
                     result = SearchResult(
                         resume=resume,
@@ -230,70 +274,127 @@ class SearchController:
                         matched_keywords=matched_keywords,
                         fuzzy_matches=fuzzy_matches
                     )
+                    result.algorithm_used = 'LEVENSHTEIN'
                     results.append(result)
                     
             except Exception as e:
-                print(f"⚠️ error in fuzzy search for {resume.id}: {e}")
+                print(f"⚠️ Fuzzy error {resume.id}: {e}")
                 continue
         
         return results
 
-    def _get_unfound_keywords(self, results, original_keywords):
-        """get keywords yang tidak ditemukan dalam exact search"""
-        found_keywords = set()
+    def _aho_corasick_search(self, resumes, keywords):
+        """Aho-Corasick search implementation"""
+        results = []
         
+        for idx, resume in enumerate(resumes):
+            if self.progress_callback and idx % 5 == 0:
+                progress = int((idx / len(resumes)) * 100)
+                self.progress_callback(f"AC: {idx+1}/{len(resumes)} ({progress}%)")
+            
+            try:
+                cv_text = self.pdf_extractor.extract_text_for_matching(resume.file_path)
+                if not cv_text or len(cv_text) < 10:
+                    continue
+                
+                # Multi-pattern search
+                matches = self.aho_corasick.search_multiple(cv_text, keywords)
+                
+                if matches:
+                    keyword_matches = {}
+                    total_matches = 0
+                    matched_keywords = []
+                    
+                    for keyword in keywords:
+                        keyword_lower = keyword.lower()
+                        if keyword_lower in matches:
+                            match_count = len(matches[keyword_lower])
+                            keyword_matches[keyword] = match_count
+                            total_matches += match_count
+                            matched_keywords.append(keyword)
+                    
+                    if total_matches > 0:
+                        result = SearchResult(
+                            resume=resume,
+                            keyword_matches=keyword_matches,
+                            total_matches=total_matches,
+                            matched_keywords=matched_keywords
+                        )
+                        result.algorithm_used = 'AC'
+                        results.append(result)
+                        
+            except Exception as e:
+                print(f"⚠️ AC error {resume.id}: {e}")
+                continue
+        
+        return results
+
+    def _calculate_relevance_scores(self, results: List[SearchResult], keywords: List[str]) -> List[SearchResult]:
+        """Calculate relevance scores"""
         for result in results:
-            found_keywords.update(result.matched_keywords)
+            base_score = result.total_matches * 10
+            
+            # Exact match bonus
+            exact_bonus = sum(count for key, count in result.keyword_matches.items() 
+                            if '(fuzzy)' not in key) * 5
+            
+            # Keyword coverage bonus
+            coverage_ratio = len(result.matched_keywords) / len(keywords)
+            coverage_bonus = coverage_ratio * 50
+            
+            result.relevance_score = base_score + exact_bonus + coverage_bonus
         
-        unfound = []
-        for keyword in original_keywords:
-            if keyword not in found_keywords:
-                unfound.append(keyword)
+        return results
+
+    def _generate_timing_summary(self) -> str:
+        """Generate timing summary"""
+        base_summary = self.timer.get_search_summary()
         
-        return unfound
+        # Add algorithm performance
+        perf_lines = [base_summary, "\n📊 Algorithm Performance:"]
+        
+        for algo, stats in self.algorithm_stats.items():
+            if stats['searches'] > 0:
+                avg_time = stats['total_time'] / stats['searches']
+                perf_lines.append(f"  • {algo}: avg {avg_time:.3f}s ({stats['searches']} searches)")
+        
+        return "\n".join(perf_lines)
+
+    def _get_unfound_keywords(self, exact_results, keywords):
+        """Get unfound keywords"""
+        found_keywords = set()
+        for result in exact_results:
+            for keyword in result.matched_keywords:
+                clean_keyword = keyword.replace(' (fuzzy)', '')
+                found_keywords.add(clean_keyword)
+        
+        return [kw for kw in keywords if kw not in found_keywords]
 
     def _combine_results(self, exact_results, fuzzy_results):
-        """combine exact dan fuzzy search results"""
-        combined_dict = {}
+        """Combine exact and fuzzy results"""
+        exact_resume_ids = {result.resume.id for result in exact_results}
+        combined = exact_results[:]
         
-        # add exact results
-        for result in exact_results:
-            combined_dict[result.resume.id] = result
-        
-        # add fuzzy results
         for fuzzy_result in fuzzy_results:
-            resume_id = fuzzy_result.resume.id
-            
-            if resume_id in combined_dict:
-                # merge with existing result
-                existing = combined_dict[resume_id]
-                existing.keyword_matches.update(fuzzy_result.keyword_matches)
-                existing.total_matches += fuzzy_result.total_matches
-                existing.matched_keywords.extend(fuzzy_result.matched_keywords)
-                existing.fuzzy_matches = fuzzy_result.fuzzy_matches
-            else:
-                # add as new result
-                combined_dict[resume_id] = fuzzy_result
+            if fuzzy_result.resume.id not in exact_resume_ids:
+                combined.append(fuzzy_result)
         
-        return list(combined_dict.values())
+        return combined
 
-    def get_available_algorithms(self) -> List[str]:
-        """get daftar algoritma yang tersedia"""
-        return ['KMP', 'BM', 'AC', 'LEVENSHTEIN']
-    
-    def validate_keywords(self, keywords_text: str) -> Tuple[bool, List[str], str]:
-        """validate dan parse keywords input"""
-        if not keywords_text.strip():
-            return False, [], "keywords cannot be empty"
+    def _execute_fuzzy_search(self, resumes, keywords, threshold):
+        """Execute fuzzy-only search"""
         
-        # split by comma and clean
-        keywords = [kw.strip() for kw in keywords_text.split(',')]
-        keywords = [kw for kw in keywords if kw]  # remove empty
+        print(f"🔍 Fuzzy-only: threshold {threshold}")
+        self.timer.start_fuzzy_search(len(keywords))
         
-        if not keywords:
-            return False, [], "no valid keywords found"
+        start_time = time.time()
+        results = self.__fuzzy_search(resumes, keywords, threshold)
+        fuzzy_time = time.time() - start_time
         
-        if len(keywords) > 10:
-            return False, [], "maximum 10 keywords allowed"
+        self.algorithm_stats['LEVENSHTEIN']['total_time'] += fuzzy_time
+        self.algorithm_stats['LEVENSHTEIN']['searches'] += 1
         
-        return True, keywords, "keywords valid"
+        self.timer.stop_fuzzy_search()
+        print(f"✅ Fuzzy completed: {len(results)} results in {fuzzy_time:.3f}s")
+        
+        return results

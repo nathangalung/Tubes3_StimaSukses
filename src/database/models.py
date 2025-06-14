@@ -1,71 +1,73 @@
-# src/database/models.py
+"""Database models for ATS"""
+
 from dataclasses import dataclass
-from typing import Optional, List, Dict
+from typing import List, Dict, Optional, Any
 from datetime import date
 
 @dataclass
 class Resume:
-    """model data resume dari database"""
+    """Resume model"""
     id: str
     category: str
     file_path: str
-    name: Optional[str] = None
+    name: str
     phone: Optional[str] = None
     birthdate: Optional[date] = None
     address: Optional[str] = None
 
 @dataclass
+class SearchResult:
+    """Search result model"""
+    resume: Resume
+    keyword_matches: Dict[str, int]
+    total_matches: int
+    matched_keywords: List[str]
+    algorithm_used: str = ""
+    relevance_score: float = 0.0
+    fuzzy_matches: Dict[str, int] = None
+
+@dataclass
+class SearchTimingInfo:
+    """Search timing information"""
+    total_time: float
+    exact_search_time: float
+    fuzzy_search_time: float
+    algorithm_used: str
+    cvs_processed: int
+
+@dataclass
 class JobHistory:
-    """model job history dari regex extraction"""
+    """Job history model"""
     position: str
     company: str
-    start_date: str
-    end_date: str
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
     description: Optional[str] = None
 
 @dataclass
 class Education:
-    """model education dari regex extraction"""
+    """Education model"""
     degree: str
     institution: str
-    year: str
-    details: Optional[str] = None
+    graduation_year: Optional[str] = None
+    gpa: Optional[str] = None
 
 @dataclass
 class CVSummary:
-    """model summary cv yang diekstrak lengkap"""
+    """CV summary model"""
     name: str
-    contact_info: Dict[str, str]  # phone, email, address
-    skills: List[str]
-    job_history: List[JobHistory]
-    education: List[Education]
     summary: Optional[str] = None
-
-@dataclass
-class SearchResult:
-    """model hasil pencarian cv dengan semua detail"""
-    resume: Resume
-    keyword_matches: Dict[str, int]  # {keyword: count}
-    total_matches: int
-    matched_keywords: List[str]
-    cv_summary: Optional[CVSummary] = None
-    fuzzy_matches: Optional[Dict[str, int]] = None
-
-@dataclass
-class SearchTimingInfo:
-    """model informasi timing search"""
-    algorithm_used: str
-    total_cvs_scanned: int
-    exact_match_time: float = 0.0
-    fuzzy_match_time: float = 0.0
-    total_results: int = 0
+    skills: List[str] = None
+    job_history: List[JobHistory] = None
+    education: List[Education] = None
+    contact_info: Dict[str, str] = None
     
-    def to_display_string(self) -> str:
-        """format timing info untuk display"""
-        exact_time = f"{self.exact_match_time:.0f}ms"
-        
-        if self.fuzzy_match_time > 0:
-            fuzzy_time = f"{self.fuzzy_match_time:.0f}ms"
-            return f"exact match ({self.algorithm_used}): {self.total_cvs_scanned} cvs in {exact_time}\nfuzzy match: processed in {fuzzy_time}"
-        else:
-            return f"exact match ({self.algorithm_used}): {self.total_cvs_scanned} cvs in {exact_time}"
+    def __post_init__(self):
+        if self.skills is None:
+            self.skills = []
+        if self.job_history is None:
+            self.job_history = []
+        if self.education is None:
+            self.education = []
+        if self.contact_info is None:
+            self.contact_info = {}

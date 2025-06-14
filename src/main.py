@@ -1,20 +1,20 @@
-# main.py - ATS CV Search Application Entry Point
+"""ATS CV Search Application Entry Point"""
 import sys
 import os
 import argparse
 
+# Add project root to path
 project_root = os.path.dirname(os.path.abspath(__file__))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from PyQt5 import QtWidgets, QtCore
+from PyQt5 import QtWidgets
 from ui.main_window import MainWindow
-from utils.test_mode import TestModeManager
 
 def check_dependencies():
-    """check critical dependencies before starting"""
+    """Check required dependencies"""
     try:
-        import psycopg2
+        import mysql.connector
         import PyPDF2
         from PyQt5 import QtWidgets
         print("all required dependencies found")
@@ -25,38 +25,36 @@ def check_dependencies():
         return False
 
 def check_data_directory():
-    """check if data directory exists"""
-    # Fix path to look in project root, not parent of project root
+    """Check data directory exists"""
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     data_path = os.path.join(project_root, 'data')
     
     if os.path.exists(data_path):
         print(f"data directory found: {data_path}")
         
-        # count pdf files
+        # Count PDF files
         pdf_count = 0
         for root, dirs, files in os.walk(data_path):
             pdf_count += len([f for f in files if f.endswith('.pdf')])
         
-        print(f"found {pdf_count} pdf files in data directory")
+        print(f"found {pdf_count} pdf files")
         return True
     else:
         print(f"data directory not found: {data_path}")
-        print("please create data directory and add CV files")
         return False
 
 def main():
-    """entry point aplikasi ats cv search dengan enhanced error handling"""
+    """Application entry point"""
     parser = argparse.ArgumentParser(description='ATS CV Search Application')
-    parser.add_argument('--test-mode', action='store_true', help='Enable test mode with limited data')
-    parser.add_argument('--create-test-data', action='store_true', help='Create test dataset and exit')
+    parser.add_argument('--test-mode', action='store_true', help='Enable test mode')
+    parser.add_argument('--create-test-data', action='store_true', help='Create test dataset')
     
     args = parser.parse_args()
     
     print("=== ATS CV SEARCH APPLICATION ===")
     print("starting application...")
     
-    # handle test mode
+    # Handle test mode
     if args.create_test_data:
         test_manager = TestModeManager()
         test_manager.create_test_dataset(max_cvs_per_category=10)
@@ -66,18 +64,18 @@ def main():
         test_manager = TestModeManager()
         test_manager.enable_test_mode()
     
-    # check dependencies
+    # Check dependencies
     if not check_dependencies():
         print("dependency check failed")
-        input("press enter to continue anyway...")
+        input("press enter to continue...")
     
-    # check data directory
+    # Check data directory
     if not check_data_directory():
         print("data directory check failed")
-        input("press enter to continue anyway...")
+        input("press enter to continue...")
     
     try:
-        # create qt application
+        # Create Qt application
         app = QtWidgets.QApplication(sys.argv)
         app.setApplicationName("ATS CV Search")
         app.setApplicationVersion("1.0")
@@ -85,32 +83,40 @@ def main():
         
         print("qt application created")
         
-        # test database connection before creating ui
+        # Test database connection
         print("testing database connection...")
-        from database.config_simple import DatabaseConfig
-        db_config = DatabaseConfig()
-        
-        if db_config.test_connection():
-            print("database connection successful")
-        else:
-            print("database connection failed")
+        try:
+            import mysql.connector
+            from database.mysql_config import MySQLConfig
+            
+            db_config = MySQLConfig()
+            
+            if db_config.test_connection():
+                print("database connection successful")
+            else:
+                print("database connection failed")
+                reply = input("continue without database? (y/n): ").lower()
+                if reply != 'y':
+                    print("application cancelled")
+                    return
+        except Exception as e:
+            print(f"database test failed: {e}")
             reply = input("continue without database? (y/n): ").lower()
             if reply != 'y':
                 print("application cancelled")
                 return
         
-        # create and show main window
+        # Create main window
         print("creating main window...")
         window = MainWindow()
         window.show()
         
-        print("main window ready")
         print("application started successfully!")
         
         if args.test_mode:
-            print("⚠️ RUNNING IN TEST MODE - Limited dataset active")
+            print("⚠️ RUNNING IN TEST MODE")
         
-        # run application event loop
+        # Run application
         sys.exit(app.exec_())
         
     except Exception as e:
@@ -118,7 +124,7 @@ def main():
         import traceback
         traceback.print_exc()
         
-        # try to show error dialog if qt is available
+        # Show error dialog
         try:
             error_app = QtWidgets.QApplication.instance()
             if not error_app:
@@ -127,7 +133,7 @@ def main():
             msg = QtWidgets.QMessageBox()
             msg.setIcon(QtWidgets.QMessageBox.Critical)
             msg.setWindowTitle("Application Error")
-            msg.setText(f"Failed to start ATS CV Search Application:\n\n{str(e)}")
+            msg.setText(f"Failed to start application:\n\n{str(e)}")
             msg.setDetailedText(traceback.format_exc())
             msg.exec_()
         except:
