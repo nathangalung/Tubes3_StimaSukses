@@ -1,109 +1,82 @@
+"""Boyer-Moore string matching algorithm"""
+
+from typing import List, Dict
+
 class BoyerMooreMatcher:
+    """Boyer-Moore string matching implementation"""
+    
     def __init__(self):
-        self.pattern = None
-        self.bad_char = None
-        self.good_suffix = None
+        pass
     
-    def _compute_bad_char_table(self, pattern):
-        """hitung bad character table untuk pattern"""
-        bad_char = {}
-        
-        # isi tabel untuk semua karakter ascii
-        for i in range(256):
-            bad_char[chr(i)] = -1
-        
-        # update posisi terakhir setiap karakter dalam pattern
-        for i in range(len(pattern)):
-            bad_char[pattern[i]] = i
-        
-        return bad_char
-    
-    def _compute_good_suffix_table(self, pattern):
-        """hitung good suffix table untuk pattern - DIPERBAIKI"""
-        m = len(pattern)
-        good_suffix = [m] * m  # default shift = pattern length
-        
-        # simple good suffix implementation untuk konsistensi
-        for i in range(m):
-            good_suffix[i] = max(1, m - i - 1)  # minimal shift 1
-        
-        return good_suffix
-    
-    def search(self, text, pattern):
-        """cari pattern dalam text menggunakan algoritma boyer-moore - DIPERBAIKI"""
+    def search(self, text: str, pattern: str) -> List[int]:
+        """Search pattern in text"""
         if not pattern or not text:
-            return {}
+            return []
         
-        # preprocessing
-        self.pattern = pattern
-        self.bad_char = self._compute_bad_char_table(pattern)
-        self.good_suffix = self._compute_good_suffix_table(pattern)
+        # Build bad character table
+        bad_char = self._build_bad_character_table(pattern)
         
-        results = {}
-        text_len = len(text)
-        pattern_len = len(pattern)
-        
+        # Search
+        matches = []
         shift = 0
         
-        while shift <= text_len - pattern_len:
-            j = pattern_len - 1
+        while shift <= len(text) - len(pattern):
+            j = len(pattern) - 1
             
-            # matching dari kanan ke kiri
+            # Compare from right to left
             while j >= 0 and pattern[j] == text[shift + j]:
                 j -= 1
             
             if j < 0:
-                # pattern ditemukan
-                if pattern not in results:
-                    results[pattern] = []
-                results[pattern].append(shift)
-                
-                # PERBAIKAN: untuk overlapping search, shift minimal 1
-                shift += 1
+                # Pattern found
+                matches.append(shift)
+                # Move to next possible position
+                if shift + len(pattern) < len(text):
+                    shift += len(pattern) - bad_char.get(text[shift + len(pattern)], -1)
+                else:
+                    shift += 1
             else:
-                # karakter tidak match, hitung shift
-                # PERBAIKAN: gunakan bad character heuristic yang benar
-                bad_char_shift = max(1, j - self.bad_char.get(text[shift + j], -1))
-                
-                # PERBAIKAN: good suffix shift yang lebih konservatif
-                good_suffix_shift = 1 if j >= len(self.good_suffix) else max(1, self.good_suffix[j])
-                
-                # ambil shift maksimum tapi minimal 1
-                shift += max(bad_char_shift, good_suffix_shift, 1)
+                # Mismatch, use bad character rule
+                bad_char_shift = max(1, j - bad_char.get(text[shift + j], -1))
+                shift += bad_char_shift
         
+        return matches
+    
+    def search_multiple(self, text: str, patterns: List[str]) -> Dict[str, List[int]]:
+        """Search multiple patterns"""
+        results = {}
+        for pattern in patterns:
+            matches = self.search(text, pattern)
+            if matches:
+                results[pattern.lower()] = matches
         return results
     
-    def search_multiple(self, text, patterns):
-        """cari multiple patterns dalam text"""
-        all_results = {}
+    def _build_bad_character_table(self, pattern: str) -> Dict[str, int]:
+        """Build bad character table"""
+        bad_char = {}
         
-        for pattern in patterns:
-            pattern = pattern.strip()
-            if pattern:
-                results = self.search(text, pattern)
-                if results:
-                    all_results.update(results)
+        for i in range(len(pattern)):
+            bad_char[pattern[i]] = i
         
-        return all_results
+        return bad_char
 
-# test function untuk validasi
 def test_boyer_moore_consistency():
-    """test apakah BM memberikan hasil sama dengan implementasi naive"""
+    """Test BM against naive implementation"""
     
     def naive_search(text, pattern):
-        """implementasi naive untuk comparison"""
-        results = {pattern: []}
+        """Naive implementation for comparison"""
+        results = []
         for i in range(len(text) - len(pattern) + 1):
             if text[i:i+len(pattern)] == pattern:
-                results[pattern].append(i)
-        return results if results[pattern] else {}
+                results.append(i)
+        return results
     
-    # test cases
+    # Test cases
     test_cases = [
         ("python java sql python", "python"),
-        ("aaaa", "aa"),  # overlapping
+        ("aaaa", "aa"),
         ("hello world hello", "hello"),
-        ("abcdefg", "xyz"),  # not found
+        ("abcdefg", "xyz"),
         ("SQL database SQL queries SQL", "SQL"),
     ]
     
