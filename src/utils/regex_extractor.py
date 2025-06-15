@@ -1,90 +1,45 @@
-"""Regex-based information extraction"""
+"""regex-based information extraction - working version"""
 
 import re
 from typing import List, Dict, Optional
 from database.models import CVSummary, JobHistory, Education
 
 class RegexExtractor:
-    """Extract information using regex patterns"""
+    """extract information using proven regex patterns"""
     
     def __init__(self):
-        # Initialize regex patterns
-        self._setup_patterns()
-    
-    def _setup_patterns(self):
-        """Setup regex patterns"""
-        
-        # Email pattern
-        self.email_pattern = re.compile(
-            r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-        )
-        
-        # Phone patterns
-        self.phone_patterns = [
-            re.compile(r'\+?\d{1,3}[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}'),
-            re.compile(r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}'),
-            re.compile(r'\d{3}[-.\s]?\d{4}'),
-        ]
-        
-        # Skills pattern
-        self.skills_pattern = re.compile(
-            r'\b(?:Python|Java|JavaScript|React|Node\.js|SQL|MongoDB|'
-            r'Docker|Kubernetes|AWS|Git|Linux|HTML|CSS|C\+\+|C#|'
-            r'Machine Learning|Data Science|Excel|AutoCAD|MATLAB|'
-            r'Photoshop|Illustrator|Marketing|Sales|Finance|Accounting)\b',
-            re.IGNORECASE
-        )
-        
-        # Job title patterns
-        self.job_title_pattern = re.compile(
-            r'\b(?:Software Engineer|Developer|Data Scientist|Manager|'
-            r'Analyst|Designer|Consultant|Director|Coordinator|'
-            r'Specialist|Administrator|Technician|Intern)\b',
-            re.IGNORECASE
-        )
-        
-        # Company patterns (common indicators)
-        self.company_indicators = re.compile(
-            r'\b(?:Inc|Corp|Corporation|Company|Ltd|Limited|LLC|'
-            r'Technologies|Solutions|Systems|Group|Pvt)\b',
-            re.IGNORECASE
-        )
-        
-        # Education patterns
-        self.education_patterns = {
-            'degree': re.compile(
-                r'\b(?:Bachelor|Master|PhD|Doctorate|Associate|'
-                r'B\.?S\.?|M\.?S\.?|B\.?A\.?|M\.?A\.?|MBA)\b',
-                re.IGNORECASE
-            ),
-            'institution': re.compile(
-                r'\b(?:University|College|Institute|School)\b',
-                re.IGNORECASE
-            )
+        self.section_keywords = {
+            'summary': ['SUMMARY', 'PROFILE', 'OVERVIEW', 'OBJECTIVE', 'PROFESSIONAL SUMMARY', 'EXECUTIVE PROFILE'],
+            'skills': ['SKILLS', 'TECHNICAL SKILLS', 'PROFESSIONAL SKILLS', 'CORE COMPETENCIES', 'HIGHLIGHTS', 'ACCOMPLISHMENTS', 'SKILL HIGHLIGHTS'],
+            'experience': ['EXPERIENCE', 'WORK HISTORY', 'PROFESSIONAL EXPERIENCE', 'EMPLOYMENT HISTORY', 'CAREER HISTORY', 'ACTIVITIES', 'MEDIA ACTIVITIES', 'WORK ACTIVITIES'],
+            'education': ['EDUCATION', 'EDUCATIONAL BACKGROUND', 'ACADEMIC HISTORY', 'ACADEMIC QUALIFICATIONS']
         }
-        
-        # Date patterns
         self.date_patterns = [
-            re.compile(r'\b\d{4}\s*-\s*\d{4}\b'),  # 2020-2023
-            re.compile(r'\b\d{4}\s*to\s*\d{4}\b', re.IGNORECASE),  # 2020 to 2023
-            re.compile(r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}\b', re.IGNORECASE)
+            r'\b\d{1,2}/\d{4}\s*[-–]\s*(?:\d{1,2}/\d{4}|Present|Current)\b',
+            r'\b\d{4}\s*[-–]\s*(?:\d{4}|Present|Current)\b',
+            r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\s*[-–]\s*(?:(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}|Present|Current)\b',
+            r'\b\d{1,2}/\d{4}\s+to\s+(?:\d{1,2}/\d{4}|Present|Current)\b',
+            r'\b\d{4}\s+to\s+(?:\d{4}|Present|Current)\b',
+            r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\s+to\s+(?:(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}|Present|Current)\b',
+            r'\b\d{1,2}/\d{4}.*?(?:Present|Current|\d{1,2}/\d{4})\b',
+            r'\b\d{4}.*?(?:Present|Current|\d{4})\b'
         ]
     
     def extract_summary(self, text: str) -> CVSummary:
-        """Extract complete CV summary"""
+        """extract complete cv summary"""
         if not text or len(text) < 10:
             return self._create_empty_summary()
         
-        # Extract components
+        # extract components menggunakan method yang sudah terbukti
         contact_info = self.extract_contact_info(text)
         skills = self.extract_skills(text)
         job_history = self.extract_job_history(text)
         education = self.extract_education(text)
-        summary_text = self.extract_professional_summary(text)
+        summary_text = self._extract_summary_text(text)
         
-        # Create CV summary
+        # create cv summary
         cv_summary = CVSummary(
-            name=contact_info.get('name', 'Unknown'),
+            name=contact_info.get('name', 'unknown'),
             summary=summary_text,
             skills=skills,
             job_history=job_history,
@@ -95,192 +50,319 @@ class RegexExtractor:
         return cv_summary
     
     def extract_contact_info(self, text: str) -> Dict[str, str]:
-        """Extract contact information"""
+        """extract contact information"""
         contact = {}
         
-        # Extract email
-        email_matches = self.email_pattern.findall(text)
+        # extract email
+        email_pattern = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
+        email_matches = email_pattern.findall(text)
         if email_matches:
             contact['email'] = email_matches[0]
         
-        # Extract phone
-        for pattern in self.phone_patterns:
+        # extract phone
+        phone_patterns = [
+            re.compile(r'\+?\d{1,3}[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}'),
+            re.compile(r'\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}'),
+            re.compile(r'\d{3}[-.\s]?\d{4}'),
+        ]
+        
+        for pattern in phone_patterns:
             phone_matches = pattern.findall(text)
             if phone_matches:
                 contact['phone'] = phone_matches[0]
                 break
         
-        # Extract name (first line or words before email)
-        lines = text.split('\n')
-        for line in lines[:5]:  # Check first 5 lines
-            line = line.strip()
-            if len(line) > 0 and len(line) < 50:
-                # Simple name detection
-                words = line.split()
-                if 2 <= len(words) <= 4:  # Typical name length
-                    if all(word.isalpha() or word.replace('-', '').isalpha() for word in words):
-                        contact['name'] = line
+        # extract name dari awal text
+        lines = text.split()[:15]  # ambil 15 kata pertama
+        potential_names = []
+        
+        skip_words = {'director', 'manager', 'senior', 'executive', 'summary', 'profile', 'skilled', 'experienced', 'innovative', 'professional'}
+        
+        for i, word in enumerate(lines):
+            if word.lower() not in skip_words and len(word) > 2 and word.isalpha():
+                # coba ambil 2-3 kata sebagai nama
+                if i + 1 < len(lines) and lines[i + 1].lower() not in skip_words and lines[i + 1].isalpha():
+                    name_candidate = f"{word} {lines[i + 1]}"
+                    if len(name_candidate) < 50:
+                        potential_names.append(name_candidate)
                         break
+        
+        if potential_names:
+            contact['name'] = potential_names[0]
         
         return contact
     
-    def extract_skills(self, text: str) -> List[str]:
-        """Extract technical skills"""
-        skills = set()
-        
-        # Find skill matches
-        skill_matches = self.skills_pattern.findall(text)
-        skills.update(skill_matches)
-        
-        # Look for skills section
-        skill_section_pattern = re.compile(
-            r'(?:skills?|technologies?|competencies)[\s:]*([^\n]*(?:\n[^\n]*)*?)(?:\n\s*\n|\n[A-Z])',
-            re.IGNORECASE | re.MULTILINE
-        )
-        
-        skill_sections = skill_section_pattern.findall(text)
-        for section in skill_sections:
-            # Extract words that might be skills
-            words = re.findall(r'\b[A-Za-z\+\#\.]+\b', section)
-            for word in words:
-                if len(word) > 2 and word not in {'and', 'the', 'with', 'for', 'etc'}:
-                    skills.add(word)
-        
-        return list(skills)[:15]  # Limit to 15 skills
+    def _fix_text_issues(self, text: str) -> str:
+        """fix common text extraction issues"""
+        text = re.sub(r'(\d{1,2}/\d{4})\s*\n\s*to\s*\n\s*(Current|Present|\d{1,2}/\d{4})', r'\1 to \2', text, flags=re.IGNORECASE)
+        text = re.sub(r'(\d{4})\s*\n\s*to\s*\n\s*(Current|Present|\d{4})', r'\1 to \2', text, flags=re.IGNORECASE)
+        text = re.sub(r'(\w+ \d{4})\s*\n\s*to\s*\n\s*(Current|Present|\w+ \d{4})', r'\1 to \2', text, flags=re.IGNORECASE)
+        return text
     
-    def extract_job_history(self, text: str) -> List[JobHistory]:
-        """Extract work experience"""
-        jobs = []
-        
-        # Look for experience section
-        exp_section_pattern = re.compile(
-            r'(?:experience|employment|work history)[\s:]*([^\n]*(?:\n[^\n]*)*?)(?:\n\s*\n|\n(?:education|skills))',
-            re.IGNORECASE | re.MULTILINE | re.DOTALL
-        )
-        
-        exp_matches = exp_section_pattern.findall(text)
-        
-        if exp_matches:
-            exp_text = exp_matches[0]
-            
-            # Find job entries
-            job_entries = re.split(r'\n\s*\n', exp_text)
-            
-            for entry in job_entries:
-                if len(entry.strip()) > 20:  # Minimum entry length
-                    job = self._parse_job_entry(entry)
-                    if job:
-                        jobs.append(job)
-        
-        return jobs[:5]  # Limit to 5 jobs
-    
-    def _parse_job_entry(self, entry: str) -> Optional[JobHistory]:
-        """Parse individual job entry"""
-        lines = [line.strip() for line in entry.split('\n') if line.strip()]
-        
-        if not lines:
+    def _extract_section_content(self, text: str, section_keywords: List[str]) -> Optional[str]:
+        """extract content dari section tertentu"""
+        if not text or not section_keywords:
             return None
         
-        # First line usually contains position and/or company
-        first_line = lines[0]
+        text = self._fix_text_issues(text)
         
-        # Try to extract position
-        job_title_matches = self.job_title_pattern.findall(first_line)
-        position = job_title_matches[0] if job_title_matches else first_line
-        
-        # Try to extract company
-        company = "Unknown Company"
-        for line in lines[:3]:  # Check first 3 lines
-            if self.company_indicators.search(line):
-                company = line
-                break
-        
-        # Try to extract dates
-        date_range = None
-        for pattern in self.date_patterns:
-            for line in lines:
-                date_matches = pattern.findall(line)
-                if date_matches:
-                    date_range = date_matches[0]
-                    break
-            if date_range:
-                break
-        
-        # Extract description
-        description = ' '.join(lines[1:3]) if len(lines) > 1 else None
-        
-        return JobHistory(
-            position=position,
-            company=company,
-            start_date=date_range.split('-')[0].strip() if date_range and '-' in date_range else None,
-            end_date=date_range.split('-')[1].strip() if date_range and '-' in date_range else None,
-            description=description
-        )
-    
-    def extract_education(self, text: str) -> List[Education]:
-        """Extract education information"""
-        education = []
-        
-        # Look for education section
-        edu_section_pattern = re.compile(
-            r'(?:education|academic|qualifications)[\s:]*([^\n]*(?:\n[^\n]*)*?)(?:\n\s*\n|\n(?:experience|skills))',
-            re.IGNORECASE | re.MULTILINE | re.DOTALL
-        )
-        
-        edu_matches = edu_section_pattern.findall(text)
-        
-        if edu_matches:
-            edu_text = edu_matches[0]
+        for keyword in section_keywords:
+            # untuk single line text, gunakan pattern yang lebih fleksibel
+            patterns = [
+                # pattern untuk single line text
+                rf'{re.escape(keyword)}\s+(.*?)(?=\s+(?:SKILLS|EXPERIENCE|EDUCATION|SUMMARY|PROFILE|HIGHLIGHTS|ACCOMPLISHMENTS|ACTIVITIES|CERTIFICATIONS|AWARDS|PROJECTS|REFERENCES)\s+|$)',
+                # pattern dengan newline
+                rf'\n{re.escape(keyword)}\n\n(.*?)(?=\n(?:SKILLS|EXPERIENCE|EDUCATION|SUMMARY|PROFILE|HIGHLIGHTS|ACCOMPLISHMENTS|ACTIVITIES|CERTIFICATIONS|AWARDS|PROJECTS|REFERENCES)\n|\Z)',
+                rf'\n{re.escape(keyword)}\n(.*?)(?=\n(?:SKILLS|EXPERIENCE|EDUCATION|SUMMARY|PROFILE|HIGHLIGHTS|ACCOMPLISHMENTS|ACTIVITIES|CERTIFICATIONS|AWARDS|PROJECTS|REFERENCES)\n|\Z)',
+                rf'^{re.escape(keyword)}\n\n(.*?)(?=\n(?:SKILLS|EXPERIENCE|EDUCATION|SUMMARY|PROFILE|HIGHLIGHTS|ACCOMPLISHMENTS|ACTIVITIES|CERTIFICATIONS|AWARDS|PROJECTS|REFERENCES)\n|\Z)',
+                rf'^{re.escape(keyword)}\n(.*?)(?=\n(?:SKILLS|EXPERIENCE|EDUCATION|SUMMARY|PROFILE|HIGHLIGHTS|ACCOMPLISHMENTS|ACTIVITIES|CERTIFICATIONS|AWARDS|PROJECTS|REFERENCES)\n|\Z)'
+            ]
             
-            # Find degree mentions
-            degree_matches = self.education_patterns['degree'].findall(edu_text)
-            institution_matches = self.education_patterns['institution'].findall(edu_text)
-            
-            # Try to pair degrees with institutions
-            for i, degree in enumerate(degree_matches):
-                institution = institution_matches[i] if i < len(institution_matches) else "Unknown Institution"
-                
-                # Look for graduation year
-                year_pattern = re.compile(r'\b(19|20)\d{2}\b')
-                years = year_pattern.findall(edu_text)
-                graduation_year = years[0] if years else None
-                
-                education.append(Education(
-                    degree=degree,
-                    institution=institution,
-                    graduation_year=graduation_year
-                ))
-        
-        return education[:3]  # Limit to 3 education entries
-    
-    def extract_professional_summary(self, text: str) -> Optional[str]:
-        """Extract professional summary"""
-        
-        # Look for summary section
-        summary_patterns = [
-            re.compile(
-                r'(?:summary|profile|objective|about)[\s:]*([^\n]*(?:\n[^\n]*)*?)(?:\n\s*\n|\n[A-Z])',
-                re.IGNORECASE | re.MULTILINE
-            ),
-            re.compile(
-                r'^([^\n]*(?:\n[^\n]*){1,3})(?:\n\s*\n)',
-                re.MULTILINE
-            )
-        ]
-        
-        for pattern in summary_patterns:
-            matches = pattern.findall(text)
-            if matches:
-                summary = matches[0].strip()
-                if len(summary) > 50 and len(summary) < 500:
-                    return summary
+            for pattern in patterns:
+                match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+                if match:
+                    content = match.group(1).strip()
+                    if content:
+                        return content
         
         return None
     
+    def _extract_summary_text(self, text: str) -> Optional[str]:
+        """extract professional summary"""
+        content = self._extract_section_content(text, self.section_keywords['summary'])
+        if content:
+            summary = re.sub(r'\s*\n\s*', ' ', content)
+            summary = re.sub(r'\s+', ' ', summary)
+            return summary.strip()
+        return None
+    
+    def extract_skills(self, text: str) -> List[str]:
+        """extract skills list"""
+        content = self._extract_section_content(text, self.section_keywords['skills'])
+        if not content:
+            return []
+        
+        skills = []
+        lines = content.split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            if not line or len(line) < 3:
+                continue
+            
+            # skip lines yang jelas bukan skills
+            skip_patterns = [
+                r'^(Developed|Managed|Led|Created|Implemented|Supervised|Coordinated|Analyzed|Designed|Maintained|Operated|Assisted|Prepared|Organized|Handled|Processed|Followed|Consistently|Ensured|Provided|Supported|Built|Established|Improved|Increased|Reduced)',
+                r'^\d{2,4}/\d{4}',
+                r'^(January|February|March|April|May|June|July|August|September|October|November|December)',
+                r'^(Company|Corporation|Inc|Ltd|LLC)',
+                r'^\d+\s+(years?|months?)',
+                r'^(at|in|for|with)\s+',
+                r'years? of experience',
+                r'responsible for',
+                r'worked with',
+            ]
+            
+            if any(re.match(pattern, line, re.IGNORECASE) for pattern in skip_patterns):
+                continue
+            
+            # bersihkan bullet points
+            line = re.sub(r'^[\-\*\•\d+\.\)]\s*', '', line).strip()
+            if not line:
+                continue
+            
+            # handle format "Category: skill1, skill2"
+            if ':' in line:
+                parts = line.split(':', 1)
+                if len(parts) == 2:
+                    category = parts[0].strip()
+                    skills_text = parts[1].strip()
+                    
+                    if category and len(category) < 50:
+                        skills.append(category)
+                    
+                    if ',' in skills_text:
+                        individual_skills = [s.strip() for s in skills_text.split(',')]
+                        skills.extend([s for s in individual_skills if s and 2 < len(s) < 50])
+                    else:
+                        if skills_text and 2 < len(skills_text) < 50:
+                            skills.append(skills_text)
+            
+            # handle comma-separated skills
+            elif ',' in line and len(line) > 30:
+                line_skills = [skill.strip() for skill in line.split(',')]
+                skills.extend([s for s in line_skills if s and 2 < len(s) < 50])
+            
+            # single skill per line
+            else:
+                if 2 < len(line) < 80:
+                    skills.append(line)
+        
+        # clean up skills
+        cleaned_skills = []
+        for skill in skills:
+            skill = re.sub(r'^(Knowledge of|Experience with|Proficient in|Skilled in|Expert in|Familiar with)\s+', '', skill, flags=re.IGNORECASE)
+            skill = skill.rstrip('.')
+            skill = skill.strip()
+            
+            if skill and skill not in cleaned_skills:
+                cleaned_skills.append(skill)
+        
+        return cleaned_skills[:20]
+    
+    def extract_job_history(self, text: str) -> List[JobHistory]:
+        """extract work experience"""
+        content = self._extract_section_content(text, self.section_keywords['experience'])
+        if not content:
+            return []
+        
+        jobs = []
+        
+        # gabungkan semua date patterns
+        combined_pattern = '|'.join(f'({pattern})' for pattern in self.date_patterns)
+        matches = list(re.finditer(combined_pattern, content, re.IGNORECASE))
+        
+        if not matches:
+            # fallback patterns untuk format yang lebih liberal
+            liberal_patterns = [
+                r'\d{2}/\d{4}.*?(?:Current|Present)',
+                r'\d{4}.*?(?:Current|Present)',
+                r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}.*?(?:Current|Present)'
+            ]
+            
+            for pattern in liberal_patterns:
+                liberal_matches = list(re.finditer(pattern, content, re.IGNORECASE | re.DOTALL))
+                if liberal_matches:
+                    matches = liberal_matches
+                    break
+        
+        for i, match in enumerate(matches):
+            # parse date range
+            date_str = match.group().strip()
+            separators = [' to ', ' - ', ' – ', '-', '–', 'to']
+            date_parts = None
+            
+            for sep in separators:
+                if sep in date_str:
+                    date_parts = [part.strip() for part in date_str.split(sep, 1)]
+                    if len(date_parts) == 2:
+                        break
+            
+            if not date_parts or len(date_parts) != 2:
+                continue
+            
+            start_date = date_parts[0]
+            end_date = date_parts[1]
+            
+            # extract job details setelah date
+            start_pos = match.end()
+            if i + 1 < len(matches):
+                end_pos = matches[i + 1].start()
+                job_text = content[start_pos:end_pos].strip()
+            else:
+                job_text = content[start_pos:].strip()
+            
+            if job_text:
+                lines = [line.strip() for line in job_text.split('\n') if line.strip()]
+                
+                if lines:
+                    position = lines[0]
+                    company = 'Unknown Company'
+                    description = None
+                    
+                    if len(lines) > 1:
+                        second_line = lines[1]
+                        # jika line kedua bukan description, anggap sebagai company
+                        if not any(second_line.startswith(verb) for verb in ['Developed', 'Managed', 'Led', 'Created', 'Implemented']):
+                            company = second_line
+                            description_start = 2
+                        else:
+                            description_start = 1
+                    else:
+                        description_start = 1
+                    
+                    if len(lines) > description_start:
+                        description = ' '.join(lines[description_start:])
+                    
+                    jobs.append(JobHistory(
+                        position=position,
+                        company=company,
+                        start_date=start_date,
+                        end_date=end_date,
+                        description=description
+                    ))
+        
+        return jobs[:10]
+    
+    def extract_education(self, text: str) -> List[Education]:
+        """extract education information"""
+        content = self._extract_section_content(text, self.section_keywords['education'])
+        
+        if not content:
+            # fallback: cari education keywords di seluruh text
+            edu_keywords = ['Bachelor', 'Master', 'PhD', 'University', 'College', 'Degree', 'MBA', 'BS', 'BA', 'MS', 'MA']
+            for keyword in edu_keywords:
+                pattern = rf'[^.]*{re.escape(keyword)}[^.]*\.?'
+                matches = re.findall(pattern, text, re.IGNORECASE)
+                if matches:
+                    content = ' '.join(matches)
+                    break
+        
+        if not content:
+            return []
+        
+        education_list = []
+        
+        # extract year
+        year_matches = re.findall(r'\b(19[8-9]\d|20[0-3]\d)\b', content)
+        graduation_year = year_matches[-1] if year_matches else None
+        
+        # extract degree
+        degree_patterns = [
+            r'\b(Bachelor\s+of\s+[A-Za-z\s]+)',
+            r'\b(Master\s+of\s+[A-Za-z\s]+)',
+            r'\b(PhD\s+in\s+[A-Za-z\s]+)',
+            r'\b(Associate\s+of\s+[A-Za-z\s]+)',
+            r'\b(MBA|MS|BS|BA|MA|M\.Eng|M\.Sc|B\.Sc)\b',
+            r'\b(High School Diploma|Secondary School)',
+            r'\b(Certificate|Diploma)\s+[A-Za-z\s]*'
+        ]
+        
+        degree = None
+        for pattern in degree_patterns:
+            degree_match = re.search(pattern, content, re.IGNORECASE)
+            if degree_match:
+                degree = degree_match.group().strip()
+                break
+        
+        # extract university
+        uni_patterns = [
+            r'\b([A-Z][A-Za-z\s]*(?:University|College|Institute|School|Academy)[A-Za-z\s]*)',
+            r'\b(University\s+of\s+[A-Za-z\s]+)',
+            r'\b([A-Z][a-z]+\s+[A-Z][a-z]+\s+(?:University|College|Institute|School))'
+        ]
+        
+        institution = None
+        for pattern in uni_patterns:
+            uni_match = re.search(pattern, content, re.IGNORECASE)
+            if uni_match:
+                institution = uni_match.group().strip()
+                institution = re.sub(r'\s*[,–-].*$', '', institution)
+                break
+        
+        if degree or institution or graduation_year:
+            education_list.append(Education(
+                degree=degree or 'Degree',
+                institution=institution or 'Unknown Institution',
+                graduation_year=graduation_year
+            ))
+        
+        return education_list[:5]
+    
     def _create_empty_summary(self) -> CVSummary:
-        """Create empty CV summary"""
+        """create empty cv summary"""
         return CVSummary(
-            name="Unknown",
+            name="unknown",
             summary=None,
             skills=[],
             job_history=[],
@@ -289,49 +371,27 @@ class RegexExtractor:
         )
 
 def test_regex_extractor():
-    """Test regex extraction"""
+    """test regex extraction dengan data real"""
     extractor = RegexExtractor()
     
-    # Sample CV text
-    sample_text = """
-    John Doe
-    Email: john.doe@email.com
-    Phone: +1-234-567-8900
+    # sample text dari debug output sebelumnya
+    sample_text = """DIRECTOR OF INFORMATION TECHNOLOGY Executive Profile Innovative executive and technology professional with strong work ethic and excellent communication skills, experienced in high-volume, multi-unit, retail and business operations. Skill Highlights Microsoft Server 2003, 2008, 2012 Exchange Server 2007, 2010 VMware ESXi VMware vCenter VMware Horizon View 5.x, 6.x, and 7.x Microsoft Hyper-V Cisco UCM and Unity Help Desk ITIL Service Catalog Vendor Management Budgeting Project Management SLA Management Asset Management Professional Experience Director of Information Technology 11/2012 to Current Company Name City , State Developed and implemented the IT strategy for the organization including software, support and infrastructure IT Administrator 03/2008 to 11/2012 Company Name City , State Planned, installed and managed Microsoft domain environment Education Bachelor of Science : Management Information Systems Cardinal Stritch University City , State"""
     
-    SUMMARY
-    Experienced software engineer with 5 years in Python development
-    
-    SKILLS
-    Python, Java, SQL, React, Docker, AWS
-    
-    EXPERIENCE
-    Software Engineer
-    Tech Corp Inc
-    2020-2023
-    Developed web applications using Python and React
-    
-    EDUCATION
-    Bachelor of Science
-    MIT University
-    2018
-    """
-    
-    print("=== REGEX EXTRACTOR TEST ===")
+    print("=== regex extractor test dengan working version ===")
     summary = extractor.extract_summary(sample_text)
     
-    print(f"Name: {summary.name}")
-    print(f"Email: {summary.contact_info.get('email', 'Not found')}")
-    print(f"Phone: {summary.contact_info.get('phone', 'Not found')}")
-    print(f"Skills: {summary.skills}")
-    print(f"Jobs: {len(summary.job_history)}")
-    print(f"Education: {len(summary.education)}")
+    print(f"name: {summary.name}")
+    print(f"skills ({len(summary.skills)}): {summary.skills}")
+    print(f"jobs ({len(summary.job_history)}):")
+    for i, job in enumerate(summary.job_history):
+        print(f"  {i+1}. {job.position} at {job.company} ({job.start_date} - {job.end_date})")
+    print(f"education ({len(summary.education)}):")
+    for i, edu in enumerate(summary.education):
+        print(f"  {i+1}. {edu.degree} from {edu.institution} ({edu.graduation_year})")
+    print(f"summary: {summary.summary}")
     
-    if summary.job_history:
-        job = summary.job_history[0]
-        print(f"First job: {job.position} at {job.company}")
-    
-    return True
+    return summary
 
 if __name__ == "__main__":
-    test_regex_extractor()
-    print("🎉 Regex extractor test completed!")
+    test_result = test_regex_extractor()
+    print("regex extractor test completed!")
