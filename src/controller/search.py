@@ -43,7 +43,7 @@ class SearchController:
         self.progress_callback = callback
 
     def search_cvs(self, keywords: List[str], algorithm: str = 'KMP', 
-                   top_n: int = 10, fuzzy_threshold: float = 0.7) -> Tuple[List[SearchResult], str]:
+                   max_results: int = 10, fuzzy_threshold: float = 0.7) -> Tuple[List[SearchResult], str]:
         """Main search function"""
         
         print(f"🔍 Starting search: {keywords}, {algorithm}")
@@ -68,14 +68,14 @@ class SearchController:
         if algorithm.upper() == 'LEVENSHTEIN':
             results = self._execute_fuzzy_search(resumes, keywords, fuzzy_threshold)
         else:
-            results = self._execute_exact_search(resumes, keywords, algorithm, fuzzy_threshold, top_n)
+            results = self._execute_exact_search(resumes, keywords, algorithm, fuzzy_threshold, max_results)
         
         # Calculate and sort
         results = self._calculate_relevance_scores(results, keywords)
         results.sort(key=lambda x: (x.relevance_score, x.total_matches), reverse=True)
         
         # Return top results
-        top_results = results[:top_n]
+        top_results = results[:max_results]
         timing_summary = self._generate_timing_summary()
         
         print(f"🎯 Completed: {len(top_results)} results")
@@ -86,7 +86,7 @@ class SearchController:
         
         return top_results, timing_summary
 
-    def _execute_exact_search(self, resumes, keywords, algorithm, fuzzy_threshold, top_n):
+    def _execute_exact_search(self, resumes, keywords, algorithm, fuzzy_threshold, max_results):
         """Execute exact search with fallback"""
         
         # Start exact search
@@ -111,7 +111,7 @@ class SearchController:
         unfound_keywords = self._get_unfound_keywords(exact_results, keywords)
         fuzzy_results = []
         
-        if unfound_keywords and len(exact_results) < top_n:
+        if unfound_keywords and len(exact_results) < max_results:
             print(f"🔍 Fuzzy fallback: {unfound_keywords}")
             self.timer.start_fuzzy_search(len(unfound_keywords))
             
@@ -124,9 +124,27 @@ class SearchController:
             self.algorithm_stats['LEVENSHTEIN']['searches'] += 1
             
             self.timer.stop_fuzzy_search()
-            print(f"🔀 Fuzzy: {len(fuzzy_results)} matches in {fuzzy_time:.3f}s")
+            print(f"✅ Fuzzy: {len(fuzzy_results)} matches in {fuzzy_time:.3f}s")
         
         return exact_results + fuzzy_results
+
+    def _execute_fuzzy_search(self, resumes, keywords, threshold):
+        """Execute fuzzy-only search"""
+        
+        print(f"🔍 Fuzzy-only: threshold {threshold}")
+        self.timer.start_fuzzy_search(len(keywords))
+        
+        start_time = time.time()
+        results = self._fuzzy_search(resumes, keywords, threshold)
+        fuzzy_time = time.time() - start_time
+        
+        self.algorithm_stats['LEVENSHTEIN']['total_time'] += fuzzy_time
+        self.algorithm_stats['LEVENSHTEIN']['searches'] += 1
+        
+        self.timer.stop_fuzzy_search()
+        print(f"✅ Fuzzy completed: {len(results)} results in {fuzzy_time:.3f}s")
+        
+        return results
 
     def _batched_exact_search(self, resumes, keywords, algorithm):
         """Exact search with batch processing"""
@@ -225,6 +243,53 @@ class SearchController:
         
         return matches
 
+    def _fuzzy_search(self, resumes, keywords, threshold):
+        """Fuzzy search using Levenshtein Distance"""
+        results = []
+        
+        for idx, resume in enumerate(resumes):
+            if self.progress_callback and idx % 5 == 0:
+                progress = int((idx / len(resumes)) * 100)
+                self.progress_callback(f"Fuzzy: {idx+1}/{len(resumes)} ({progress}%)")
+            
+            try:
+                cv_text = self.pdf_extractor.extract_text(resume.file_path)
+                if not cv_text or len(cv_text) < 10:
+                    continue
+                
+                # Fuzzy matching
+                fuzzy_matches = {}
+                total_fuzzy_matches = 0
+                matched_keywords = []
+                
+                for keyword in keywords:
+                    # Use fuzzy_search_multiple method
+                    matches = self.levenshtein_matcher.fuzzy_search_multiple(cv_text, [keyword], threshold)
+                    
+                    if matches and keyword.lower() in matches:
+                        fuzzy_key = f"{keyword} (fuzzy)"
+                        match_count = len(matches[keyword.lower()])
+                        fuzzy_matches[fuzzy_key] = match_count
+                        total_fuzzy_matches += match_count
+                        matched_keywords.append(fuzzy_key)
+                        print(f"🔍 Fuzzy '{keyword}' {match_count}x in {resume.id}")
+                
+                if total_fuzzy_matches > 0:
+                    result = SearchResult(
+                        resume=resume,
+                        keyword_matches=fuzzy_matches,
+                        total_matches=total_fuzzy_matches,
+                        matched_keywords=matched_keywords
+                    )
+                    result.algorithm_used = 'LEVENSHTEIN'
+                    results.append(result)
+                    
+            except Exception as e:
+                print(f"⚠️ Fuzzy error {resume.id}: {e}")
+                continue
+        
+        return results
+
     def _aho_corasick_search(self, resumes, keywords):
         """Aho-Corasick search implementation"""
         results = []
@@ -272,62 +337,7 @@ class SearchController:
                 print(f"⚠️ Error: {resume.id}: {e}")
                 continue
         
-        return results
-
-    def _execute_fuzzy_search(self, resumes, keywords, fuzzy_threshold):
-        """Execute fuzzy search only"""
-        self.timer.start_fuzzy_search(len(keywords))
-        start_time = time.time()
-        
-        results = self._fuzzy_search(resumes, keywords, fuzzy_threshold)
-        
-        fuzzy_time = time.time() - start_time
-        self.algorithm_stats['LEVENSHTEIN']['total_time'] += fuzzy_time
-        self.algorithm_stats['LEVENSHTEIN']['searches'] += 1
-        
-        self.timer.stop_fuzzy_search()
-        print(f"🔀 Fuzzy: {len(results)} matches in {fuzzy_time:.3f}s")
-        
-        return results
-
-    def _fuzzy_search(self, resumes, keywords, threshold):
-        """Fuzzy search using Levenshtein Distance"""
-        results = []
-        
-        for resume in resumes:
-            try:
-                cv_text = self.pdf_extractor.extract_text(resume.file_path)
-                if not cv_text or len(cv_text.strip()) < 50:
-                    continue
-                
-                matches = self.levenshtein_matcher.fuzzy_search(cv_text, keywords, threshold)
-                
-                if matches:
-                    keyword_matches = {}
-                    total_matches = 0
-                    matched_keywords = []
-                    
-                    for keyword, data in matches.items():
-                        count = data.get('count', 0)
-                        if count > 0:
-                            keyword_matches[keyword] = count
-                            total_matches += count
-                            matched_keywords.append(keyword)
-                    
-                    if total_matches > 0:
-                        result = SearchResult(
-                            resume=resume,
-                            keyword_matches=keyword_matches,
-                            total_matches=total_matches,
-                            matched_keywords=matched_keywords
-                        )
-                        result.algorithm_used = 'LEVENSHTEIN'
-                        results.append(result)
-                        
-            except Exception as e:
-                print(f"⚠️ Fuzzy error {resume.id}: {e}")
-                continue
-        
+        print(f"📊 AC: {successful_extractions} success, {failed_extractions} failed")
         return results
 
     def _get_unfound_keywords(self, results, original_keywords):
@@ -335,7 +345,9 @@ class SearchController:
         found_keywords = set()
         
         for result in results:
-            found_keywords.update(result.matched_keywords)
+            for keyword in result.matched_keywords:
+                clean_keyword = keyword.replace(' (fuzzy)', '')
+                found_keywords.add(clean_keyword)
         
         unfound = [kw for kw in original_keywords if kw not in found_keywords]
         return unfound
