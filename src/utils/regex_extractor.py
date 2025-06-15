@@ -1,41 +1,69 @@
-"""regex-based information extraction - working version"""
+"""regex-based information extraction - improved work experience detection"""
 
 import re
 from typing import List, Dict, Optional
 from database.models import CVSummary, JobHistory, Education
 
 class RegexExtractor:
-    """extract information using proven regex patterns"""
+    """extract information using improved regex patterns"""
     
     def __init__(self):
         self.section_keywords = {
-            'summary': ['SUMMARY', 'PROFILE', 'OVERVIEW', 'OBJECTIVE', 'PROFESSIONAL SUMMARY', 'EXECUTIVE PROFILE'],
-            'skills': ['SKILLS', 'TECHNICAL SKILLS', 'PROFESSIONAL SKILLS', 'CORE COMPETENCIES', 'HIGHLIGHTS', 'ACCOMPLISHMENTS', 'SKILL HIGHLIGHTS'],
-            'experience': ['EXPERIENCE', 'WORK HISTORY', 'PROFESSIONAL EXPERIENCE', 'EMPLOYMENT HISTORY', 'CAREER HISTORY', 'ACTIVITIES', 'MEDIA ACTIVITIES', 'WORK ACTIVITIES'],
-            'education': ['EDUCATION', 'EDUCATIONAL BACKGROUND', 'ACADEMIC HISTORY', 'ACADEMIC QUALIFICATIONS']
+            'summary': ['SUMMARY', 'PROFILE', 'OVERVIEW', 'OBJECTIVE', 'PROFESSIONAL SUMMARY', 'EXECUTIVE PROFILE', 'ABOUT', 'CAREER SUMMARY'],
+            'skills': ['SKILLS', 'TECHNICAL SKILLS', 'PROFESSIONAL SKILLS', 'CORE COMPETENCIES', 'HIGHLIGHTS', 'ACCOMPLISHMENTS', 'SKILL HIGHLIGHTS', 'TECHNICAL COMPETENCIES'],
+            'experience': ['EXPERIENCE', 'WORK HISTORY', 'PROFESSIONAL EXPERIENCE', 'EMPLOYMENT HISTORY', 'CAREER HISTORY', 'ACTIVITIES', 'MEDIA ACTIVITIES', 'WORK ACTIVITIES', 'EMPLOYMENT', 'CAREER', 'WORK EXPERIENCE'],
+            'education': ['EDUCATION', 'EDUCATIONAL BACKGROUND', 'ACADEMIC HISTORY', 'ACADEMIC QUALIFICATIONS', 'EDUCATION BACKGROUND']
         }
+        
+        # improved date patterns for work experience
         self.date_patterns = [
-            r'\b\d{1,2}/\d{4}\s*[-–]\s*(?:\d{1,2}/\d{4}|Present|Current)\b',
-            r'\b\d{4}\s*[-–]\s*(?:\d{4}|Present|Current)\b',
-            r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\s*[-–]\s*(?:(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}|Present|Current)\b',
-            r'\b\d{1,2}/\d{4}\s+to\s+(?:\d{1,2}/\d{4}|Present|Current)\b',
-            r'\b\d{4}\s+to\s+(?:\d{4}|Present|Current)\b',
-            r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\s+to\s+(?:(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}|Present|Current)\b',
-            r'\b\d{1,2}/\d{4}.*?(?:Present|Current|\d{1,2}/\d{4})\b',
-            r'\b\d{4}.*?(?:Present|Current|\d{4})\b'
+            # standard formats
+            r'\b\d{1,2}\/\d{4}\s*[-–]\s*(?:\d{1,2}\/\d{4}|Present|Current|Now)\b',
+            r'\b\d{4}\s*[-–]\s*(?:\d{4}|Present|Current|Now)\b',
+            r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}\s*[-–]\s*(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}|Present|Current|Now)\b',
+            
+            # alternative formats with "to"
+            r'\b\d{1,2}\/\d{4}\s+(?:to|To|TO)\s+(?:\d{1,2}\/\d{4}|Present|Current|Now)\b',
+            r'\b\d{4}\s+(?:to|To|TO)\s+(?:\d{4}|Present|Current|Now)\b',
+            r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}\s+(?:to|To|TO)\s+(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}|Present|Current|Now)\b',
+            
+            # flexible formats
+            r'\b\d{4}\s*[\/\-–]\s*\d{4}\b',
+            r'\b\d{1,2}\/\d{4}\s*[\/\-–]\s*\d{1,2}\/\d{4}\b',
+            
+            # single date with present
+            r'\b\d{4}\s*[-–]\s*(?:Present|Current|Now)\b',
+            r'\b\d{1,2}\/\d{4}\s*[-–]\s*(?:Present|Current|Now)\b'
+        ]
+        
+        # job position indicators
+        self.job_indicators = [
+            r'\b(?:Manager|Director|Analyst|Developer|Engineer|Specialist|Coordinator|Assistant|Executive|Officer|Lead|Senior|Junior|Intern|Consultant|Administrator)\b',
+            r'\b(?:CEO|CTO|CFO|VP|President|Head|Chief)\b',
+            r'\b(?:Software|Data|Project|Marketing|Sales|HR|IT|Finance|Operations|Quality|Business|Technical|Product)\b'
         ]
     
     def extract_summary(self, text: str) -> CVSummary:
-        """extract complete cv summary"""
+        """extract complete cv summary with improved work experience detection"""
         if not text or len(text) < 10:
             return self._create_empty_summary()
         
-        # extract components menggunakan method yang sudah terbukti
-        contact_info = self.extract_contact_info(text)
-        skills = self.extract_skills(text)
-        job_history = self.extract_job_history(text)
-        education = self.extract_education(text)
-        summary_text = self._extract_summary_text(text)
+        # normalize text for better parsing
+        normalized_text = self._normalize_text(text)
+        
+        # extract components
+        contact_info = self.extract_contact_info(normalized_text)
+        skills = self.extract_skills(normalized_text)
+        job_history = self.extract_job_history(normalized_text)
+        education = self.extract_education(normalized_text)
+        summary_text = self._extract_summary_text(normalized_text)
+        
+        # debug output
+        print(f"regex extraction results:")
+        print(f"  contact: {len(contact_info)} items")
+        print(f"  skills: {len(skills)} items")
+        print(f"  jobs: {len(job_history)} items")
+        print(f"  education: {len(education)} items")
         
         # create cv summary
         cv_summary = CVSummary(
@@ -48,6 +76,20 @@ class RegexExtractor:
         )
         
         return cv_summary
+    
+    def _normalize_text(self, text: str) -> str:
+        """normalize text for better regex matching"""
+        # fix common line break issues
+        text = re.sub(r'(\d{1,2}/\d{4})\s*\n\s*(?:-|–|to|To|TO)\s*\n\s*(Present|Current|Now|\d{1,2}/\d{4})', r'\1 - \2', text, flags=re.IGNORECASE)
+        text = re.sub(r'(\d{4})\s*\n\s*(?:-|–|to|To|TO)\s*\n\s*(Present|Current|Now|\d{4})', r'\1 - \2', text, flags=re.IGNORECASE)
+        
+        # fix month-year patterns
+        text = re.sub(r'([A-Za-z]+ \d{4})\s*\n\s*(?:-|–|to|To|TO)\s*\n\s*(Present|Current|Now|[A-Za-z]+ \d{4})', r'\1 - \2', text, flags=re.IGNORECASE)
+        
+        # normalize multiple whitespaces
+        text = re.sub(r'\s+', ' ', text)
+        
+        return text
     
     def extract_contact_info(self, text: str) -> Dict[str, str]:
         """extract contact information"""
@@ -72,15 +114,14 @@ class RegexExtractor:
                 contact['phone'] = phone_matches[0]
                 break
         
-        # extract name dari awal text
-        lines = text.split()[:15]  # ambil 15 kata pertama
+        # extract name from beginning
+        lines = text.split()[:15]
         potential_names = []
         
-        skip_words = {'director', 'manager', 'senior', 'executive', 'summary', 'profile', 'skilled', 'experienced', 'innovative', 'professional'}
+        skip_words = {'director', 'manager', 'senior', 'executive', 'summary', 'profile', 'skilled', 'experienced', 'innovative', 'professional', 'cv', 'resume'}
         
         for i, word in enumerate(lines):
             if word.lower() not in skip_words and len(word) > 2 and word.isalpha():
-                # coba ambil 2-3 kata sebagai nama
                 if i + 1 < len(lines) and lines[i + 1].lower() not in skip_words and lines[i + 1].isalpha():
                     name_candidate = f"{word} {lines[i + 1]}"
                     if len(name_candidate) < 50:
@@ -92,37 +133,29 @@ class RegexExtractor:
         
         return contact
     
-    def _fix_text_issues(self, text: str) -> str:
-        """fix common text extraction issues"""
-        text = re.sub(r'(\d{1,2}/\d{4})\s*\n\s*to\s*\n\s*(Current|Present|\d{1,2}/\d{4})', r'\1 to \2', text, flags=re.IGNORECASE)
-        text = re.sub(r'(\d{4})\s*\n\s*to\s*\n\s*(Current|Present|\d{4})', r'\1 to \2', text, flags=re.IGNORECASE)
-        text = re.sub(r'(\w+ \d{4})\s*\n\s*to\s*\n\s*(Current|Present|\w+ \d{4})', r'\1 to \2', text, flags=re.IGNORECASE)
-        return text
-    
     def _extract_section_content(self, text: str, section_keywords: List[str]) -> Optional[str]:
-        """extract content dari section tertentu"""
+        """extract content from specific section with improved patterns"""
         if not text or not section_keywords:
             return None
         
-        text = self._fix_text_issues(text)
-        
         for keyword in section_keywords:
-            # untuk single line text, gunakan pattern yang lebih fleksibel
+            # multiple patterns to catch different text formats
             patterns = [
-                # pattern untuk single line text
-                rf'{re.escape(keyword)}\s+(.*?)(?=\s+(?:SKILLS|EXPERIENCE|EDUCATION|SUMMARY|PROFILE|HIGHLIGHTS|ACCOMPLISHMENTS|ACTIVITIES|CERTIFICATIONS|AWARDS|PROJECTS|REFERENCES)\s+|$)',
-                # pattern dengan newline
-                rf'\n{re.escape(keyword)}\n\n(.*?)(?=\n(?:SKILLS|EXPERIENCE|EDUCATION|SUMMARY|PROFILE|HIGHLIGHTS|ACCOMPLISHMENTS|ACTIVITIES|CERTIFICATIONS|AWARDS|PROJECTS|REFERENCES)\n|\Z)',
-                rf'\n{re.escape(keyword)}\n(.*?)(?=\n(?:SKILLS|EXPERIENCE|EDUCATION|SUMMARY|PROFILE|HIGHLIGHTS|ACCOMPLISHMENTS|ACTIVITIES|CERTIFICATIONS|AWARDS|PROJECTS|REFERENCES)\n|\Z)',
-                rf'^{re.escape(keyword)}\n\n(.*?)(?=\n(?:SKILLS|EXPERIENCE|EDUCATION|SUMMARY|PROFILE|HIGHLIGHTS|ACCOMPLISHMENTS|ACTIVITIES|CERTIFICATIONS|AWARDS|PROJECTS|REFERENCES)\n|\Z)',
-                rf'^{re.escape(keyword)}\n(.*?)(?=\n(?:SKILLS|EXPERIENCE|EDUCATION|SUMMARY|PROFILE|HIGHLIGHTS|ACCOMPLISHMENTS|ACTIVITIES|CERTIFICATIONS|AWARDS|PROJECTS|REFERENCES)\n|\Z)'
+                # keyword followed by content until next section
+                rf'{re.escape(keyword)}\s*:?\s*(.*?)(?=\n(?:SKILLS|EXPERIENCE|EDUCATION|SUMMARY|PROFILE|HIGHLIGHTS|ACCOMPLISHMENTS|ACTIVITIES|CERTIFICATIONS|AWARDS|PROJECTS|REFERENCES|EMPLOYMENT|CAREER|WORK)\s*:?|\Z)',
+                
+                # keyword on separate line
+                rf'\n{re.escape(keyword)}\s*:?\s*\n(.*?)(?=\n(?:SKILLS|EXPERIENCE|EDUCATION|SUMMARY|PROFILE|HIGHLIGHTS|ACCOMPLISHMENTS|ACTIVITIES|CERTIFICATIONS|AWARDS|PROJECTS|REFERENCES|EMPLOYMENT|CAREER|WORK)\s*:?|\Z)',
+                
+                # keyword at start
+                rf'^{re.escape(keyword)}\s*:?\s*(.*?)(?=\n(?:SKILLS|EXPERIENCE|EDUCATION|SUMMARY|PROFILE|HIGHLIGHTS|ACCOMPLISHMENTS|ACTIVITIES|CERTIFICATIONS|AWARDS|PROJECTS|REFERENCES|EMPLOYMENT|CAREER|WORK)\s*:?|\Z)',
             ]
             
             for pattern in patterns:
                 match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
                 if match:
                     content = match.group(1).strip()
-                    if content:
+                    if content and len(content) > 10:
                         return content
         
         return None
@@ -150,7 +183,7 @@ class RegexExtractor:
             if not line or len(line) < 3:
                 continue
             
-            # skip lines yang jelas bukan skills
+            # skip job activity lines
             skip_patterns = [
                 r'^(Developed|Managed|Led|Created|Implemented|Supervised|Coordinated|Analyzed|Designed|Maintained|Operated|Assisted|Prepared|Organized|Handled|Processed|Followed|Consistently|Ensured|Provided|Supported|Built|Established|Improved|Increased|Reduced)',
                 r'^\d{2,4}/\d{4}',
@@ -166,12 +199,12 @@ class RegexExtractor:
             if any(re.match(pattern, line, re.IGNORECASE) for pattern in skip_patterns):
                 continue
             
-            # bersihkan bullet points
+            # clean bullet points
             line = re.sub(r'^[\-\*\•\d+\.\)]\s*', '', line).strip()
             if not line:
                 continue
             
-            # handle format "Category: skill1, skill2"
+            # handle categorized skills
             if ':' in line:
                 parts = line.split(':', 1)
                 if len(parts) == 2:
@@ -211,95 +244,265 @@ class RegexExtractor:
         return cleaned_skills[:20]
     
     def extract_job_history(self, text: str) -> List[JobHistory]:
-        """extract work experience"""
+        """extract work experience with improved detection"""
+        print("extracting job history...")
+        
+        # try structured section first
         content = self._extract_section_content(text, self.section_keywords['experience'])
+        
         if not content:
+            print("no structured experience section found, trying alternative methods")
+            # fallback: search entire text for date patterns
+            content = self._find_experience_by_dates(text)
+        
+        if not content:
+            print("no work experience content found")
             return []
+        
+        print(f"found experience content: {len(content)} characters")
         
         jobs = []
         
-        # gabungkan semua date patterns
+        # method 1: find by date patterns
+        jobs_from_dates = self._extract_jobs_by_dates(content)
+        if jobs_from_dates:
+            jobs.extend(jobs_from_dates)
+            print(f"found {len(jobs_from_dates)} jobs using date patterns")
+        
+        # method 2: find by job titles/companies
+        if not jobs:
+            jobs_from_titles = self._extract_jobs_by_titles(content)
+            if jobs_from_titles:
+                jobs.extend(jobs_from_titles)
+                print(f"found {len(jobs_from_titles)} jobs using title patterns")
+        
+        # method 3: simple text blocks
+        if not jobs:
+            jobs_from_blocks = self._extract_jobs_from_blocks(content)
+            if jobs_from_blocks:
+                jobs.extend(jobs_from_blocks)
+                print(f"found {len(jobs_from_blocks)} jobs using text blocks")
+        
+        print(f"total jobs extracted: {len(jobs)}")
+        return jobs[:10]
+    
+    def _find_experience_by_dates(self, text: str) -> Optional[str]:
+        """find experience section by looking for date patterns"""
+        # combine all date patterns
+        combined_pattern = '|'.join(f'({pattern})' for pattern in self.date_patterns)
+        
+        # find all date matches with context
+        matches = []
+        for match in re.finditer(combined_pattern, text, re.IGNORECASE):
+            start = max(0, match.start() - 200)
+            end = min(len(text), match.end() + 200)
+            context = text[start:end]
+            matches.append((match.start(), match.end(), context))
+        
+        if matches:
+            # find largest cluster of dates
+            start_pos = min(match[0] for match in matches) - 300
+            end_pos = max(match[1] for match in matches) + 300
+            
+            start_pos = max(0, start_pos)
+            end_pos = min(len(text), end_pos)
+            
+            experience_text = text[start_pos:end_pos]
+            print(f"found experience section by dates: {len(experience_text)} characters")
+            return experience_text
+        
+        return None
+    
+    def _extract_jobs_by_dates(self, content: str) -> List[JobHistory]:
+        """extract jobs using date pattern recognition"""
+        jobs = []
+        
+        # find all date patterns
         combined_pattern = '|'.join(f'({pattern})' for pattern in self.date_patterns)
         matches = list(re.finditer(combined_pattern, content, re.IGNORECASE))
         
-        if not matches:
-            # fallback patterns untuk format yang lebih liberal
-            liberal_patterns = [
-                r'\d{2}/\d{4}.*?(?:Current|Present)',
-                r'\d{4}.*?(?:Current|Present)',
-                r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}.*?(?:Current|Present)'
-            ]
-            
-            for pattern in liberal_patterns:
-                liberal_matches = list(re.finditer(pattern, content, re.IGNORECASE | re.DOTALL))
-                if liberal_matches:
-                    matches = liberal_matches
-                    break
+        print(f"found {len(matches)} date matches")
         
         for i, match in enumerate(matches):
-            # parse date range
             date_str = match.group().strip()
-            separators = [' to ', ' - ', ' – ', '-', '–', 'to']
-            date_parts = None
+            print(f"processing date: {date_str}")
             
-            for sep in separators:
-                if sep in date_str:
-                    date_parts = [part.strip() for part in date_str.split(sep, 1)]
-                    if len(date_parts) == 2:
-                        break
+            # parse date range
+            start_date, end_date = self._parse_date_range(date_str)
             
-            if not date_parts or len(date_parts) != 2:
+            if not start_date:
                 continue
             
-            start_date = date_parts[0]
-            end_date = date_parts[1]
+            # extract job details around this date
+            job_start = max(0, match.start() - 300)
+            job_end = match.end() + 300
             
-            # extract job details setelah date
-            start_pos = match.end()
             if i + 1 < len(matches):
-                end_pos = matches[i + 1].start()
-                job_text = content[start_pos:end_pos].strip()
-            else:
-                job_text = content[start_pos:].strip()
+                job_end = min(job_end, matches[i + 1].start())
             
-            if job_text:
-                lines = [line.strip() for line in job_text.split('\n') if line.strip()]
+            job_text = content[job_start:job_end].strip()
+            
+            # parse job information
+            position, company, description = self._parse_job_details(job_text, date_str)
+            
+            if position and position.strip():
+                job = JobHistory(
+                    position=position,
+                    company=company or 'Unknown Company',
+                    start_date=start_date,
+                    end_date=end_date,
+                    description=description
+                )
+                jobs.append(job)
+                print(f"extracted job: {position} at {company}")
+        
+        return jobs
+    
+    def _extract_jobs_by_titles(self, content: str) -> List[JobHistory]:
+        """extract jobs by looking for job title patterns"""
+        jobs = []
+        
+        # patterns that indicate job titles
+        title_patterns = [
+            r'\b(?:Manager|Director|Analyst|Developer|Engineer|Specialist|Coordinator|Assistant|Executive|Officer|Lead|Senior|Junior)\b[^\n]{0,50}',
+            r'\b(?:CEO|CTO|CFO|VP|President|Head|Chief)\b[^\n]{0,50}',
+            r'\b(?:Software|Data|Project|Marketing|Sales|HR|IT|Finance|Operations|Quality|Business|Technical|Product)\s+(?:Manager|Director|Analyst|Developer|Engineer|Specialist|Coordinator|Assistant|Executive|Officer|Lead|Senior|Junior)\b'
+        ]
+        
+        for pattern in title_patterns:
+            matches = re.finditer(pattern, content, re.IGNORECASE)
+            
+            for match in matches:
+                title = match.group().strip()
                 
-                if lines:
-                    position = lines[0]
-                    company = 'Unknown Company'
-                    description = None
+                # get surrounding context
+                start = max(0, match.start() - 100)
+                end = min(len(content), match.end() + 200)
+                context = content[start:end]
+                
+                # look for dates in context
+                date_match = None
+                for date_pattern in self.date_patterns:
+                    date_match = re.search(date_pattern, context, re.IGNORECASE)
+                    if date_match:
+                        break
+                
+                if date_match:
+                    start_date, end_date = self._parse_date_range(date_match.group())
                     
-                    if len(lines) > 1:
-                        second_line = lines[1]
-                        # jika line kedua bukan description, anggap sebagai company
-                        if not any(second_line.startswith(verb) for verb in ['Developed', 'Managed', 'Led', 'Created', 'Implemented']):
-                            company = second_line
-                            description_start = 2
-                        else:
-                            description_start = 1
-                    else:
-                        description_start = 1
-                    
-                    if len(lines) > description_start:
-                        description = ' '.join(lines[description_start:])
-                    
-                    jobs.append(JobHistory(
-                        position=position,
-                        company=company,
+                    job = JobHistory(
+                        position=title,
+                        company='Unknown Company',
                         start_date=start_date,
                         end_date=end_date,
-                        description=description
-                    ))
+                        description=None
+                    )
+                    jobs.append(job)
+                    print(f"extracted job by title: {title}")
         
-        return jobs[:10]
+        return jobs[:5]
+    
+    def _extract_jobs_from_blocks(self, content: str) -> List[JobHistory]:
+        """extract jobs from text blocks"""
+        jobs = []
+        
+        # split content into potential job blocks
+        blocks = re.split(r'\n\s*\n', content)
+        
+        for block in blocks:
+            block = block.strip()
+            if len(block) < 20:
+                continue
+            
+            # check if block contains date
+            has_date = False
+            for pattern in self.date_patterns:
+                if re.search(pattern, block, re.IGNORECASE):
+                    has_date = True
+                    break
+            
+            if not has_date:
+                continue
+            
+            # extract first line as potential job title
+            lines = [line.strip() for line in block.split('\n') if line.strip()]
+            
+            if lines:
+                position = lines[0]
+                
+                # clean up position
+                position = re.sub(r'^\d+\.\s*', '', position)
+                position = re.sub(r'^[-*•]\s*', '', position)
+                
+                if len(position) > 5 and len(position) < 100:
+                    job = JobHistory(
+                        position=position,
+                        company='Unknown Company',
+                        start_date='Unknown',
+                        end_date='Unknown',
+                        description=None
+                    )
+                    jobs.append(job)
+                    print(f"extracted job from block: {position}")
+        
+        return jobs
+    
+    def _parse_date_range(self, date_str: str) -> tuple:
+        """parse date range from string"""
+        # common separators
+        separators = [' to ', ' - ', ' – ', ' TO ', '-', '–', 'to', 'To', 'TO']
+        
+        for sep in separators:
+            if sep in date_str:
+                parts = [part.strip() for part in date_str.split(sep, 1)]
+                if len(parts) == 2:
+                    return parts[0], parts[1]
+        
+        # single date
+        return date_str, 'Present'
+    
+    def _parse_job_details(self, job_text: str, date_str: str) -> tuple:
+        """parse job details from text"""
+        lines = [line.strip() for line in job_text.split('\n') if line.strip()]
+        
+        position = None
+        company = None
+        description = None
+        
+        # remove date from lines
+        clean_lines = []
+        for line in lines:
+            if date_str not in line:
+                clean_lines.append(line)
+        
+        if clean_lines:
+            # first non-date line is likely position
+            position = clean_lines[0]
+            position = re.sub(r'^\d+\.\s*', '', position)
+            position = re.sub(r'^[-*•]\s*', '', position)
+            
+            # second line might be company
+            if len(clean_lines) > 1:
+                second_line = clean_lines[1]
+                
+                # check if it looks like a company name
+                if not any(second_line.lower().startswith(verb) for verb in ['developed', 'managed', 'led', 'created', 'implemented']):
+                    company = second_line
+                
+            # remaining lines as description
+            if len(clean_lines) > 2:
+                desc_lines = clean_lines[2:] if company else clean_lines[1:]
+                if desc_lines:
+                    description = ' '.join(desc_lines)
+        
+        return position, company, description
     
     def extract_education(self, text: str) -> List[Education]:
         """extract education information"""
         content = self._extract_section_content(text, self.section_keywords['education'])
         
         if not content:
-            # fallback: cari education keywords di seluruh text
+            # fallback: search for education keywords
             edu_keywords = ['Bachelor', 'Master', 'PhD', 'University', 'College', 'Degree', 'MBA', 'BS', 'BA', 'MS', 'MA']
             for keyword in edu_keywords:
                 pattern = rf'[^.]*{re.escape(keyword)}[^.]*\.?'
@@ -369,29 +572,3 @@ class RegexExtractor:
             education=[],
             contact_info={}
         )
-
-def test_regex_extractor():
-    """test regex extraction dengan data real"""
-    extractor = RegexExtractor()
-    
-    # sample text dari debug output sebelumnya
-    sample_text = """DIRECTOR OF INFORMATION TECHNOLOGY Executive Profile Innovative executive and technology professional with strong work ethic and excellent communication skills, experienced in high-volume, multi-unit, retail and business operations. Skill Highlights Microsoft Server 2003, 2008, 2012 Exchange Server 2007, 2010 VMware ESXi VMware vCenter VMware Horizon View 5.x, 6.x, and 7.x Microsoft Hyper-V Cisco UCM and Unity Help Desk ITIL Service Catalog Vendor Management Budgeting Project Management SLA Management Asset Management Professional Experience Director of Information Technology 11/2012 to Current Company Name City , State Developed and implemented the IT strategy for the organization including software, support and infrastructure IT Administrator 03/2008 to 11/2012 Company Name City , State Planned, installed and managed Microsoft domain environment Education Bachelor of Science : Management Information Systems Cardinal Stritch University City , State"""
-    
-    print("=== regex extractor test dengan working version ===")
-    summary = extractor.extract_summary(sample_text)
-    
-    print(f"name: {summary.name}")
-    print(f"skills ({len(summary.skills)}): {summary.skills}")
-    print(f"jobs ({len(summary.job_history)}):")
-    for i, job in enumerate(summary.job_history):
-        print(f"  {i+1}. {job.position} at {job.company} ({job.start_date} - {job.end_date})")
-    print(f"education ({len(summary.education)}):")
-    for i, edu in enumerate(summary.education):
-        print(f"  {i+1}. {edu.degree} from {edu.institution} ({edu.graduation_year})")
-    print(f"summary: {summary.summary}")
-    
-    return summary
-
-if __name__ == "__main__":
-    test_result = test_regex_extractor()
-    print("regex extractor test completed!")

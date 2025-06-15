@@ -6,8 +6,6 @@ from database.models import CVSummary, JobHistory, Education
 class SummaryView(QtWidgets.QDialog):
     """CV summary dialog"""
     
-    view_cv_requested = QtCore.pyqtSignal(str)
-    
     def __init__(self, cv_summary: CVSummary = None, parent=None):
         super().__init__(parent)
         self.resume_id = None
@@ -88,29 +86,6 @@ class SummaryView(QtWidgets.QDialog):
         buttons_widget = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(buttons_widget)
         
-        # View CV button
-        view_cv_btn = QtWidgets.QPushButton("📄 View Full CV")
-        view_cv_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2ecc71;
-                color: white;
-                border: none;
-                padding: 12px 24px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 6px;
-                min-width: 120px;
-            }
-            QPushButton:hover {
-                background-color: #27ae60;
-            }
-            QPushButton:pressed {
-                background-color: #229954;
-            }
-        """)
-        view_cv_btn.clicked.connect(self._on_view_cv_clicked)
-        layout.addWidget(view_cv_btn)
-        
         layout.addStretch()
         
         # Close button
@@ -142,10 +117,10 @@ class SummaryView(QtWidgets.QDialog):
         """Show CV summary"""
         self.resume_id = resume_id
         
-        print(f"📋 Displaying summary for {summary.name}")
-        print(f"   Skills: {len(summary.skills)}")
-        print(f"   Jobs: {len(summary.job_history)}")
-        print(f"   Education: {len(summary.education)}")
+        print(f"displaying summary for {summary.name}")
+        print(f"   skills: {len(summary.skills)}")
+        print(f"   jobs: {len(summary.job_history)}")
+        print(f"   education: {len(summary.education)}")
         
         # Update header
         self.name_label.setText(f"📋 {summary.name}")
@@ -595,9 +570,3 @@ class SummaryView(QtWidgets.QDialog):
             layout.addWidget(gpa_label)
         
         return edu_widget
-    
-    def _on_view_cv_clicked(self):
-        """Handle view CV button"""
-        if self.resume_id:
-            print(f"📄 Requesting to view CV: {self.resume_id}")
-            self.view_cv_requested.emit(self.resume_id)
