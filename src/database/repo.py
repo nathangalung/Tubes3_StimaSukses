@@ -1,4 +1,4 @@
-"""Repository for resume data"""
+"""Repository with encryption support"""
 
 from typing import List, Dict, Optional
 import mysql.connector
@@ -13,15 +13,18 @@ sys.path.insert(0, os.path.dirname(current_dir))
 
 from utils.database_util import DatabaseUtil
 from database.models import Resume
+from utils.encryption import Encryption
 
 class ResumeRepository:
-    """Repository for resume data"""
+    """Repository for resume data with encryption support"""
     
-    def __init__(self):
+    def __init__(self, use_encryption: bool = False):
         self.db_util = DatabaseUtil()
+        self.use_encryption = use_encryption
+        self.encryptor = Encryption("ATS_Database_Key_2024") if use_encryption else None
     
     def get_all_resumes(self) -> List[Resume]:
-        """Get all resumes with normalized paths"""
+        """Get all resumes with optional decryption"""
         conn = self.db_util.get_connection()
         if not conn:
             return []
@@ -40,7 +43,9 @@ class ResumeRepository:
                     ap.address,
                     ad.application_role,
                     ap.applicant_id,
-                    ad.detail_id
+                    ad.detail_id,
+                    ap.first_name,
+                    ap.last_name
                 FROM ApplicationDetail ad
                 LEFT JOIN ApplicantProfile ap ON ad.applicant_id = ap.applicant_id
                 ORDER BY ad.detail_id
@@ -52,12 +57,26 @@ class ResumeRepository:
             
             resumes = []
             for result in results:
-                # Normalize file path for cross-platform compatibility
+                # Handle encryption/decryption
+                if self.use_encryption and self.encryptor:
+                    decrypted_data = self.encryptor.decrypt_profile_data(result)
+                    first_name = decrypted_data.get('first_name', '')
+                    last_name = decrypted_data.get('last_name', '')
+                    phone = decrypted_data.get('phone_number', result['phone'])
+                    address = decrypted_data.get('address', result['address'])
+                else:
+                    first_name = result['first_name'] or ''
+                    last_name = result['last_name'] or ''
+                    phone = result['phone']
+                    address = result['address']
+                
+                # Normalize file path
                 file_path = result['file_path']
                 if file_path:
                     file_path = file_path.replace('\\', '/')
                 
-                name = result['name'].strip() if result['name'] else 'Unknown'
+                # Construct name
+                name = f"{first_name} {last_name}".strip()
                 if not name or name == ' ':
                     name = 'Unknown'
                 
@@ -66,9 +85,9 @@ class ResumeRepository:
                     category=result['category'] or 'Unknown',
                     file_path=file_path,
                     name=name,
-                    phone=result['phone'],
+                    phone=phone,
                     birthdate=result['birthdate'],
-                    address=result['address']
+                    address=address
                 )
                 resumes.append(resume)
             
@@ -78,6 +97,49 @@ class ResumeRepository:
         except Error as e:
             print(f"Error fetching resumes: {e}")
             return []
+        finally:
+            self.db_util.close_connection(conn)
+    
+    def save_encrypted_profile(self, profile_data: dict) -> bool:
+        """Save encrypted profile data to database"""
+        if not self.use_encryption or not self.encryptor:
+            print("❌ Encryption not enabled")
+            return False
+        
+        conn = self.db_util.get_connection()
+        if not conn:
+            return False
+        
+        try:
+            cursor = conn.cursor()
+            
+            # Encrypt sensitive data
+            encrypted_data = self.encryptor.encrypt_profile_data(profile_data)
+            
+            # Insert into database
+            insert_query = """
+                INSERT INTO ApplicantProfile 
+                (first_name, last_name, phone_number, address, date_of_birth)
+                VALUES (%s, %s, %s, %s, %s)
+            """
+            
+            cursor.execute(insert_query, (
+                encrypted_data.get('first_name', ''),
+                encrypted_data.get('last_name', ''),
+                encrypted_data.get('phone_number', ''),
+                encrypted_data.get('address', ''),
+                profile_data.get('date_of_birth')
+            ))
+            
+            conn.commit()
+            cursor.close()
+            
+            print("✅ Encrypted profile saved successfully")
+            return True
+            
+        except Error as e:
+            print(f"Error saving encrypted profile: {e}")
+            return False
         finally:
             self.db_util.close_connection(conn)
     
