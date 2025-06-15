@@ -46,7 +46,7 @@ class JobHistory:
 
 @dataclass
 class Education:
-    """Education model"""
+    """Education model with GPA support"""
     degree: str
     institution: str
     graduation_year: Optional[str] = None

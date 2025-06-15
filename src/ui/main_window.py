@@ -122,16 +122,17 @@ class MainWindow(QtWidgets.QMainWindow):
         # Update status
         self.status_bar.showMessage("Searching CVs...")
         self.results_panel.show_loading(f"Searching with {algorithm}...")
+        self.update_algorithm_display(algorithm)
         
         # Process events to update UI
         QtWidgets.QApplication.processEvents()
         
         try:
-            # Perform search
+            # Perform search - pass keywords as list, not string
             results, timing_info = self.search_controller.search_cvs(
-                keywords=keywords,
+                keywords=keywords,  # This is already a list from search_params
                 algorithm=algorithm,
-                top_n=top_n,
+                max_results=top_n,
                 fuzzy_threshold=fuzzy_threshold
             )
             

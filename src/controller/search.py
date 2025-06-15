@@ -42,55 +42,69 @@ class SearchController:
         """Set progress callback"""
         self.progress_callback = callback
 
-    def search_cvs(self, keywords: List[str], algorithm: str = 'KMP', 
-                   top_n: int = 10, fuzzy_threshold: float = 0.7) -> Tuple[List[SearchResult], str]:
-        """Main search function"""
+    def search_cvs(self, keywords, algorithm='KMP', max_results=50, fuzzy_threshold=0.8):
+        """Enhanced search with proper algorithm selection"""
+        if not keywords:
+            return []
         
-        print(f"🔍 Starting search: {keywords}, {algorithm}")
+        # Parse keywords - handle both string and list inputs
+        if isinstance(keywords, str):
+            keyword_list = [k.strip() for k in keywords.split(',') if k.strip()]
+        elif isinstance(keywords, list):
+            keyword_list = keywords
+        else:
+            return []
         
-        # Initialize timer
-        self.timer.reset()
+        if not keyword_list:
+            return []
+        
+        print(f"🔍 Searching with {algorithm} algorithm")
+        print(f"📝 Keywords: {keyword_list}")
         
         # Get resumes
-        all_resumes = self.repo.get_all_resumes()
-        if not all_resumes:
-            return [], "No CVs found"
+        resumes = self.repo.get_all_resumes()[:self.max_cvs_to_process]
         
-        # Limit for performance
-        resumes = all_resumes[:self.max_cvs_to_process]
-        print(f"📄 Processing {len(resumes)} resumes")
+        # Initialize timer - FIX: use correct method name
+        self.timer.start_total_search()
         
-        # Debug sample paths
-        for i, resume in enumerate(resumes[:3]):
-            print(f"   {i+1}. {resume.id}: {resume.file_path}")
-        
-        # Execute search
-        if algorithm.upper() == 'LEVENSHTEIN':
-            results = self._execute_fuzzy_search(resumes, keywords, fuzzy_threshold)
-        else:
-            results = self._execute_exact_search(resumes, keywords, algorithm, fuzzy_threshold, top_n)
-        
-        # Calculate and sort
-        results = self._calculate_relevance_scores(results, keywords)
-        results.sort(key=lambda x: (x.relevance_score, x.total_matches), reverse=True)
-        
-        # Return top results
-        top_results = results[:top_n]
-        timing_summary = self._generate_timing_summary()
-        
-        print(f"🎯 Completed: {len(top_results)} results")
-        
-        # Show statistics
-        stats = self.pdf_extractor.get_extraction_stats()
-        print(f"📊 PDF: {stats['cached_files']} success, {stats['failed_files']} failed")
-        
-        return top_results, timing_summary
+        try:
+            # Route to appropriate search method based on algorithm
+            if algorithm.upper() == 'KMP':
+                results = self._execute_exact_search(resumes, keyword_list, 'KMP', fuzzy_threshold, max_results)
+            elif algorithm.upper() == 'BM':
+                results = self._execute_exact_search(resumes, keyword_list, 'BM', fuzzy_threshold, max_results)
+            elif algorithm.upper() == 'AC':
+                results = self._execute_exact_search(resumes, keyword_list, 'AC', fuzzy_threshold, max_results)
+            elif algorithm.upper() == 'LEVENSHTEIN':
+                results = self._execute_fuzzy_search(resumes, keyword_list, fuzzy_threshold)
+            else:
+                print(f"⚠️ Unknown algorithm: {algorithm}, using KMP")
+                results = self._execute_exact_search(resumes, keyword_list, 'KMP', fuzzy_threshold, max_results)
+            
+            # Calculate relevance scores
+            results = self._calculate_relevance_scores(results, keyword_list)
+            
+            # Sort by relevance and limit results
+            results.sort(key=lambda x: x.relevance_score, reverse=True)
+            limited_results = results[:max_results]
+            
+            # FIX: use correct method name
+            self.timer.stop_total_search()
+            
+            # Generate timing summary
+            timing_info = self._generate_timing_summary()
+            
+            print(f"✅ Search completed: {len(limited_results)} results")
+            return limited_results, timing_info
+            
+        except Exception as e:
+            # FIX: use correct method name
+            self.timer.stop_total_search()
+            print(f"❌ Search error: {e}")
+            raise e
 
     def _execute_exact_search(self, resumes, keywords, algorithm, fuzzy_threshold, top_n):
         """Execute exact search with fallback"""
-        
-        # Start exact search
-        self.timer.start_exact_search(algorithm, len(resumes))
         start_time = time.time()
         
         # Choose algorithm
@@ -104,7 +118,6 @@ class SearchController:
         self.algorithm_stats[algorithm.upper()]['total_time'] += exact_time
         self.algorithm_stats[algorithm.upper()]['searches'] += 1
         
-        self.timer.stop_exact_search()
         print(f"✅ Exact: {len(exact_results)} matches in {exact_time:.3f}s")
         
         # Fuzzy fallback if needed
@@ -113,17 +126,15 @@ class SearchController:
         
         if unfound_keywords and len(exact_results) < top_n:
             print(f"🔍 Fuzzy fallback: {unfound_keywords}")
-            self.timer.start_fuzzy_search(len(unfound_keywords))
             
             start_time = time.time()
             fuzzy_resumes = resumes[:50]
-            fuzzy_results = self.__fuzzy_search(fuzzy_resumes, unfound_keywords, fuzzy_threshold)
+            fuzzy_results = self._SearchController__fuzzy_search(fuzzy_resumes, unfound_keywords, fuzzy_threshold)
             fuzzy_time = time.time() - start_time
             
             self.algorithm_stats['LEVENSHTEIN']['total_time'] += fuzzy_time
             self.algorithm_stats['LEVENSHTEIN']['searches'] += 1
             
-            self.timer.stop_fuzzy_search()
             print(f"✅ Fuzzy: {len(fuzzy_results)} matches in {fuzzy_time:.3f}s")
         
         return self._combine_results(exact_results, fuzzy_results)
@@ -284,8 +295,11 @@ class SearchController:
         return results
 
     def _aho_corasick_search(self, resumes, keywords):
-        """Aho-Corasick search implementation"""
+        """Enhanced Aho-Corasick search implementation"""
         results = []
+        
+        # Build automaton once for all keywords (AC advantage)
+        self.aho_corasick.build_automaton(keywords)
         
         for idx, resume in enumerate(resumes):
             if self.progress_callback and idx % 5 == 0:
@@ -297,7 +311,7 @@ class SearchController:
                 if not cv_text or len(cv_text) < 10:
                     continue
                 
-                # Multi-pattern search
+                # Single traversal multi-pattern search (AC advantage)
                 matches = self.aho_corasick.search_multiple(cv_text, keywords)
                 
                 if matches:
@@ -306,7 +320,7 @@ class SearchController:
                     matched_keywords = []
                     
                     for keyword in keywords:
-                        keyword_lower = keyword.lower()
+                        keyword_lower = keyword.lower().strip()
                         if keyword_lower in matches:
                             match_count = len(matches[keyword_lower])
                             keyword_matches[keyword] = match_count
@@ -348,7 +362,7 @@ class SearchController:
 
     def _generate_timing_summary(self) -> str:
         """Generate timing summary"""
-        base_summary = self.timer.get_search_summary()
+        base_summary = f"⏱️ Search Performance Summary:\n  • Total Time: {self.timer.total_time:.3f}s"
         
         # Add algorithm performance
         perf_lines = [base_summary, "\n📊 Algorithm Performance:"]
@@ -385,16 +399,14 @@ class SearchController:
         """Execute fuzzy-only search"""
         
         print(f"🔍 Fuzzy-only: threshold {threshold}")
-        self.timer.start_fuzzy_search(len(keywords))
         
         start_time = time.time()
-        results = self.__fuzzy_search(resumes, keywords, threshold)
+        results = self._SearchController__fuzzy_search(resumes, keywords, threshold)
         fuzzy_time = time.time() - start_time
         
         self.algorithm_stats['LEVENSHTEIN']['total_time'] += fuzzy_time
         self.algorithm_stats['LEVENSHTEIN']['searches'] += 1
         
-        self.timer.stop_fuzzy_search()
         print(f"✅ Fuzzy completed: {len(results)} results in {fuzzy_time:.3f}s")
         
         return results
