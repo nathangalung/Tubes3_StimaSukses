@@ -270,7 +270,7 @@ class SummaryView(QtWidgets.QDialog):
         self.content_layout.addWidget(section)
     
     def _add_skills_section(self, skills: list):
-        """Add skills section"""
+        """Add skills section - show all skills without truncation"""
         section = QtWidgets.QWidget()
         section.setStyleSheet("""
             QWidget {
@@ -297,54 +297,50 @@ class SummaryView(QtWidgets.QDialog):
         """)
         layout.addWidget(title_label)
         
-        # Skills tags
-        skills_widget = QtWidgets.QWidget()
-        skills_layout = QtWidgets.QHBoxLayout(skills_widget)
-        skills_layout.setContentsMargins(0, 0, 0, 0)
-        skills_layout.setSpacing(8)
+        # Skills container with flow layout
+        skills_container = QtWidgets.QWidget()
+        container_layout = QtWidgets.QVBoxLayout(skills_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(8)
         
-        # Show max 12 skills
-        displayed_skills = skills[:12]
+        # Show ALL skills in rows of 6
         colors = ['#007bff', '#28a745', '#dc3545', '#ffc107', '#17a2b8', '#6f42c1']
+        skills_per_row = 6
         
-        for i, skill in enumerate(displayed_skills):
-            skill_tag = QtWidgets.QLabel(skill)
-            color = colors[i % len(colors)]
-            skill_tag.setStyleSheet(f"""
-                QLabel {{
-                    background-color: {color};
-                    color: white;
-                    padding: 6px 12px;
-                    border-radius: 15px;
-                    font-size: 11px;
-                    font-weight: bold;
-                    margin: 2px;
-                }}
-            """)
-            skill_tag.setAlignment(QtCore.Qt.AlignCenter)
-            skills_layout.addWidget(skill_tag)
+        for start_idx in range(0, len(skills), skills_per_row):
+            # Create row widget
+            row_widget = QtWidgets.QWidget()
+            row_layout = QtWidgets.QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(8)
             
-            # Break line after 6
-            if (i + 1) % 6 == 0 and i + 1 < len(displayed_skills):
-                skills_layout.addStretch()
-                break
+            # Add skills for this row
+            end_idx = min(start_idx + skills_per_row, len(skills))
+            for i in range(start_idx, end_idx):
+                skill = skills[i]
+                skill_tag = QtWidgets.QLabel(skill)
+                color = colors[i % len(colors)]
+                skill_tag.setStyleSheet(f"""
+                    QLabel {{
+                        background-color: {color};
+                        color: white;
+                        padding: 6px 12px;
+                        border-radius: 15px;
+                        font-size: 11px;
+                        font-weight: bold;
+                        margin: 2px;
+                    }}
+                """)
+                skill_tag.setAlignment(QtCore.Qt.AlignCenter)
+                row_layout.addWidget(skill_tag)
+            
+            # Add stretch to left-align skills
+            row_layout.addStretch()
+            
+            # Add row to container
+            container_layout.addWidget(row_widget)
         
-        skills_layout.addStretch()
-        layout.addWidget(skills_widget)
-        
-        # Show remaining count
-        if len(skills) > 12:
-            more_label = QtWidgets.QLabel(f"... and {len(skills) - 12} more skills")
-            more_label.setStyleSheet("""
-                QLabel {
-                    font-size: 11px;
-                    color: #6c757d;
-                    font-style: italic;
-                    background-color: transparent;
-                }
-            """)
-            layout.addWidget(more_label)
-        
+        layout.addWidget(skills_container)
         self.content_layout.addWidget(section)
     
     def _add_job_history_section(self, job_history: list):
@@ -431,17 +427,20 @@ class SummaryView(QtWidgets.QDialog):
         header_layout.addStretch()
         layout.addLayout(header_layout)
         
-        # Company
-        company_label = QtWidgets.QLabel(f"🏢 {job.company}")
-        company_label.setStyleSheet("""
-            QLabel {
-                font-size: 12px;
-                color: #495057;
-                background-color: transparent;
-                margin-left: 10px;
-            }
-        """)
-        layout.addWidget(company_label)
+        # Company (only show if not unknown/empty)
+        if (job.company and 
+            job.company.lower() not in ['unknown company', 'unknown', 'n/a', 'na'] and
+            job.company.strip()):
+            company_label = QtWidgets.QLabel(f"🏢 {job.company}")
+            company_label.setStyleSheet("""
+                QLabel {
+                    font-size: 12px;
+                    color: #495057;
+                    background-color: transparent;
+                    margin-left: 10px;
+                }
+            """)
+            layout.addWidget(company_label)
         
         # Description
         if job.description and len(job.description.strip()) > 10:
@@ -526,8 +525,8 @@ class SummaryView(QtWidgets.QDialog):
         """)
         header_layout.addWidget(degree_label)
         
-        # Year
-        if hasattr(edu, 'graduation_year') and edu.graduation_year:
+        # Graduation year (fixed attribute name)
+        if edu.graduation_year:
             year_label = QtWidgets.QLabel(edu.graduation_year)
             year_label.setStyleSheet("""
                 QLabel {
@@ -556,7 +555,7 @@ class SummaryView(QtWidgets.QDialog):
         layout.addWidget(institution_label)
         
         # GPA if available
-        if hasattr(edu, 'gpa') and edu.gpa:
+        if edu.gpa:
             gpa_label = QtWidgets.QLabel(f"📊 GPA: {edu.gpa}")
             gpa_label.setStyleSheet("""
                 QLabel {
