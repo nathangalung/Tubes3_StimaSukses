@@ -8,7 +8,7 @@ import logging
 import time
 
 class PDFExtractor:
-    """PDF text extractor"""
+    """PDF text extractor with cross-platform support"""
     
     def __init__(self):
         self.project_root = Path(__file__).parent.parent.parent
@@ -34,40 +34,38 @@ class PDFExtractor:
         return self._generate_searchable_content(cv_path)
     
     def extract_text(self, cv_path: str) -> Optional[str]:
-        """Extract text from PDF file"""
+        """Extract text from PDF file with cross-platform path handling"""
         try:
-            # Handle path formats
-            if cv_path.startswith('data/'):
-                full_path = self.project_root / cv_path
-            else:
-                full_path = Path(cv_path)
+            # Resolve file path properly
+            full_path = self._resolve_path(cv_path)
+            if not full_path:
+                self.logger.warning(f"File not found: {cv_path}")
+                return None
             
             self.logger.debug(f"Extracting from: {full_path}")
             
-            if not full_path.exists():
-                self.logger.warning(f"File not found: {full_path}")
-                return None
-            
             # Check cache and failed files
-            if str(full_path) in self.failed_files:
+            cache_key = str(full_path)
+            if cache_key in self.failed_files:
                 return None
             
-            if str(full_path) in self.text_cache:
-                return self.text_cache[str(full_path)]
+            if cache_key in self.text_cache:
+                return self.text_cache[cache_key]
             
             # Check file size
             try:
                 file_size_mb = os.path.getsize(full_path) / (1024 * 1024)
                 if file_size_mb > self.max_file_size_mb:
                     self.logger.warning(f"File too large: {file_size_mb:.1f}MB")
-                    self.failed_files.add(str(full_path))
+                    self.failed_files.add(cache_key)
                     return None
             except:
-                self.failed_files.add(str(full_path))
+                self.failed_files.add(cache_key)
                 return None
 
             start_time = time.time()
             
+            # Open with binary mode for cross-platform compatibility
             with open(full_path, 'rb') as file:
                 pdf_reader = PyPDF2.PdfReader(file)
                 
@@ -75,7 +73,7 @@ class PDFExtractor:
                 num_pages = len(pdf_reader.pages)
                 if num_pages > 20:
                     self.logger.warning(f"Too many pages: {num_pages}")
-                    self.failed_files.add(str(full_path))
+                    self.failed_files.add(cache_key)
                     return None
                 
                 text = ""
@@ -103,18 +101,43 @@ class PDFExtractor:
                 # Clean and cache
                 if text.strip():
                     cleaned_text = self._clean_text(text)
-                    self.text_cache[str(full_path)] = cleaned_text
+                    self.text_cache[cache_key] = cleaned_text
                     self.logger.info(f"Extracted {len(cleaned_text)} chars")
                     return cleaned_text
                 else:
                     self.logger.warning(f"No text extracted")
-                    self.failed_files.add(str(full_path))
+                    self.failed_files.add(cache_key)
                     return None
                 
         except Exception as e:
             self.logger.error(f"Error reading PDF: {e}")
             self.failed_files.add(cv_path)
             return None
+    
+    def _resolve_path(self, cv_path: str) -> Optional[Path]:
+        """Resolve file path with cross-platform support"""
+        # Convert to Path object
+        path = Path(cv_path)
+        
+        # If already absolute and exists
+        if path.is_absolute() and path.exists():
+            return path
+        
+        # Handle different path formats
+        normalized_path = cv_path.replace('\\', '/').replace('//', '/')
+        
+        # Try relative to project root
+        full_path = self.project_root / normalized_path
+        if full_path.exists():
+            return full_path
+        
+        # Try with data prefix if not present
+        if not normalized_path.startswith('data/'):
+            data_path = self.project_root / 'data' / normalized_path
+            if data_path.exists():
+                return data_path
+        
+        return None
     
     def _clean_text(self, text: str) -> str:
         """Clean extracted text"""
@@ -134,11 +157,11 @@ class PDFExtractor:
     
     def _generate_searchable_content(self, cv_path: str) -> str:
         """Generate searchable content fallback"""
-        path_parts = cv_path.split('/')
+        path_parts = Path(cv_path).parts
         category = path_parts[1] if len(path_parts) > 1 else "GENERAL"
         file_id = Path(cv_path).stem
         
-        # Category skills mapping
+        # Category skills mapping (same as before)
         category_skills = {
             'INFORMATION-TECHNOLOGY': [
                 'Python', 'Java', 'JavaScript', 'React', 'Node.js', 'SQL', 'MongoDB',
@@ -213,12 +236,8 @@ Professional in {category.replace('-', ' ').lower()}
 Skills: {', '.join(skills[:15])}
 Experience in {category.replace('-', ' ').lower()} field
 {' '.join(skills)}
-Professional background includes {skills[0] if skills else 'industry experience'}
-Expertise in {skills[1] if len(skills) > 1 else 'relevant technologies'}
-Strong background in {skills[2] if len(skills) > 2 else 'professional skills'}
         """.strip()
         
-        self.logger.info(f"Generated content for {cv_path}")
         return content.lower()
     
     def get_extraction_stats(self):
