@@ -5,6 +5,7 @@ import mysql.connector
 from mysql.connector import Error
 import os
 import sys
+from pathlib import Path
 
 # Add path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -20,7 +21,7 @@ class ResumeRepository:
         self.db_util = DatabaseUtil()
     
     def get_all_resumes(self) -> List[Resume]:
-        """Get all resumes"""
+        """Get all resumes with normalized paths"""
         conn = self.db_util.get_connection()
         if not conn:
             return []
@@ -28,7 +29,6 @@ class ResumeRepository:
         try:
             cursor = conn.cursor(dictionary=True)
             
-            # Join tables query
             query = """
                 SELECT 
                     CONCAT('CV', LPAD(ad.detail_id, 6, '0')) as id,
@@ -50,19 +50,21 @@ class ResumeRepository:
             cursor.execute(query)
             results = cursor.fetchall()
             
-            # Convert to Resume objects
             resumes = []
             for result in results:
-                # Clean name
+                # Normalize file path for cross-platform compatibility
+                file_path = result['file_path']
+                if file_path:
+                    file_path = file_path.replace('\\', '/')
+                
                 name = result['name'].strip() if result['name'] else 'Unknown'
                 if not name or name == ' ':
                     name = 'Unknown'
                 
-                # Create Resume object
                 resume = Resume(
                     id=result['id'],
                     category=result['category'] or 'Unknown',
-                    file_path=result['file_path'],
+                    file_path=file_path,
                     name=name,
                     phone=result['phone'],
                     birthdate=result['birthdate'],

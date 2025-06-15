@@ -1,4 +1,4 @@
-"""cv operations controller"""
+"""CV operations controller"""
 
 import os
 import platform
@@ -12,7 +12,7 @@ from utils.pdf_extractor import PDFExtractor
 from utils.regex_extractor import RegexExtractor
 
 class CVController:
-    """cv operations controller"""
+    """CV operations controller"""
     
     def __init__(self):
         self.repo = ResumeRepository()
@@ -20,7 +20,7 @@ class CVController:
         self.regex_extractor = RegexExtractor()
     
     def get_cv_text(self, resume_id: str) -> Optional[str]:
-        """get cv text for matching"""
+        """Get CV text for matching"""
         resume = self.repo.get_resume_by_id(resume_id)
         if not resume:
             return None
@@ -28,172 +28,221 @@ class CVController:
         return self.pdf_extractor.extract_text_for_matching(resume.file_path)
     
     def get_cv_summary(self, resume_id: str) -> Optional[CVSummary]:
-        """generate cv summary using regex"""
-        print(f"generating summary for {resume_id}")
+        """Generate CV summary using regex"""
+        print(f"📋 Generating summary for {resume_id}")
         
         resume = self.repo.get_resume_by_id(resume_id)
         if not resume:
-            print(f"resume {resume_id} not found")
+            print(f"❌ Resume {resume_id} not found")
             return None
         
-        # check file path format
-        file_path = resume.file_path
+        # Resolve file path
+        file_path = self._resolve_file_path(resume.file_path)
+        if not file_path:
+            print(f"❌ File not found: {resume.file_path}")
+            return None
         
-        # handle different path formats
-        if not os.path.exists(file_path):
-            # try relative to project root
-            project_root = Path(__file__).parent.parent.parent
-            full_path = project_root / file_path
-            if full_path.exists():
-                file_path = str(full_path)
-            else:
-                print(f"file not found: {file_path}")
-                return None
-        
-        # extract text
+        # Extract text
         cv_text = self.pdf_extractor.extract_text(file_path)
         if not cv_text:
-            print(f"failed to extract text from {file_path}")
+            print(f"❌ Failed to extract text from {file_path}")
             return None
         
-        print(f"extracted {len(cv_text)} characters")
+        print(f"✅ Extracted {len(cv_text)} characters")
         
-        # extract summary using regex
+        # Extract summary using regex
         summary = self.regex_extractor.extract_summary(cv_text)
         
-        # enhance with database info
-        if resume.name and resume.name != "unknown":
+        # Enhance with database info
+        if resume.name and resume.name.lower() != "unknown":
             summary.name = resume.name
         if resume.phone:
             summary.contact_info['phone'] = resume.phone
         if resume.address:
             summary.contact_info['address'] = resume.address
         
-        print(f"generated summary: {len(summary.skills)} skills, {len(summary.job_history)} jobs, {len(summary.education)} education")
+        print(f"✅ Generated summary: {len(summary.skills)} skills, {len(summary.job_history)} jobs")
         
         return summary
     
     def open_cv_file(self, resume_id: str) -> bool:
-        """open cv file berdasarkan struktur project"""
+        """Open CV file with cross-platform support"""
         resume = self.repo.get_resume_by_id(resume_id)
         if not resume:
-            print(f"resume not found: {resume_id}")
+            print(f"❌ Resume not found: {resume_id}")
             return False
         
-        # resolve file path berdasarkan struktur project
-        file_path = resume.file_path
+        # Resolve file path
+        file_path = self._resolve_file_path(resume.file_path)
+        if not file_path:
+            print(f"❌ CV file not found: {resume.file_path}")
+            return False
         
-        # jika path tidak absolute, resolve dari project root
-        if not os.path.isabs(file_path):
-            project_root = Path(__file__).parent.parent.parent
-            full_path = project_root / file_path
-            if full_path.exists():
-                file_path = str(full_path.resolve())
-            else:
-                print(f"cv file not found: {file_path}")
-                print(f"tried path: {full_path}")
-                return False
-        else:
-            if not os.path.exists(file_path):
-                print(f"cv file not found: {file_path}")
-                return False
-            file_path = os.path.abspath(file_path)
+        print(f"📄 Opening CV: {file_path}")
         
         try:
-            print(f"opening cv: {file_path}")
+            current_platform = platform.system()
             
-            # open berdasarkan platform
-            if platform.system() == 'Windows':
-                os.startfile(file_path)
-                print("opened with windows default app")
-                return True
+            if current_platform == 'Windows':
+                return self._open_windows(file_path)
+            elif current_platform == 'Darwin':  # macOS
+                return self._open_macos(file_path)
+            else:  # Linux and other Unix-like systems
+                return self._open_linux(file_path)
                 
-            elif platform.system() == 'Darwin':  # macos
-                subprocess.run(['open', file_path], check=True)
-                print("opened with macos default app")
-                return True
-                
-            else:  # linux
-                # prioritas: xdg-open -> browser -> pdf viewer
-                
-                # 1. xdg-open (recommended)
-                if shutil.which('xdg-open'):
-                    try:
-                        subprocess.run(['xdg-open', file_path], 
-                                     check=True, 
-                                     stdout=subprocess.DEVNULL, 
-                                     stderr=subprocess.DEVNULL,
-                                     timeout=5)
-                        print("opened with xdg-open")
-                        return True
-                    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                        pass
-                
-                # 2. browser dengan file protocol
-                browsers = ['firefox', 'google-chrome', 'chromium-browser', 'chromium']
-                file_url = f"file://{file_path}"
-                
-                for browser in browsers:
-                    if shutil.which(browser):
-                        try:
-                            subprocess.run([browser, file_url], 
-                                         check=False,
-                                         stdout=subprocess.DEVNULL, 
-                                         stderr=subprocess.DEVNULL,
-                                         timeout=5)
-                            print(f"opened with {browser}")
-                            return True
-                        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                            continue
-                
-                # 3. pdf viewers
-                pdf_viewers = ['evince', 'okular', 'atril', 'zathura', 'mupdf']
-                
-                for viewer in pdf_viewers:
-                    if shutil.which(viewer):
-                        try:
-                            subprocess.run([viewer, file_path], 
-                                         check=False,
-                                         stdout=subprocess.DEVNULL, 
-                                         stderr=subprocess.DEVNULL,
-                                         timeout=5)
-                            print(f"opened with {viewer}")
-                            return True
-                        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                            continue
-                
-                print("no pdf viewer found")
-                print(f"file path: {file_path}")
-                print("install: xdg-open, firefox, atau evince")
-                return False
-            
         except Exception as e:
-            print(f"error opening cv: {e}")
+            print(f"❌ Error opening CV: {e}")
             return False
     
+    def _resolve_file_path(self, file_path: str) -> Optional[str]:
+        """Resolve file path to absolute path"""
+        # Convert to Path object for better handling
+        path = Path(file_path)
+        
+        # If already absolute and exists
+        if path.is_absolute() and path.exists():
+            return str(path.resolve())
+        
+        # Try relative to project root
+        project_root = Path(__file__).parent.parent.parent
+        full_path = project_root / file_path
+        
+        if full_path.exists():
+            return str(full_path.resolve())
+        
+        # Try with forward slashes (Windows compatibility)
+        normalized_path = project_root / file_path.replace('\\', '/')
+        if normalized_path.exists():
+            return str(normalized_path.resolve())
+        
+        return None
+    
+    def _open_windows(self, file_path: str) -> bool:
+        """Open file on Windows"""
+        try:
+            # Method 1: os.startfile (most reliable on Windows)
+            os.startfile(file_path)
+            print("✅ Opened with Windows default app")
+            return True
+        except Exception as e:
+            print(f"⚠️ os.startfile failed: {e}")
+            
+        try:
+            # Method 2: subprocess with cmd
+            subprocess.run(['cmd', '/c', 'start', '', file_path], 
+                         check=True, shell=True)
+            print("✅ Opened with cmd start")
+            return True
+        except Exception as e:
+            print(f"⚠️ cmd start failed: {e}")
+            
+        try:
+            # Method 3: PowerShell Invoke-Item
+            subprocess.run(['powershell', 'Invoke-Item', f'"{file_path}"'], 
+                         check=True)
+            print("✅ Opened with PowerShell")
+            return True
+        except Exception as e:
+            print(f"⚠️ PowerShell failed: {e}")
+            
+        # Method 4: Try common Windows PDF viewers
+        pdf_viewers = [
+            'AcroRd32.exe',  # Adobe Reader
+            'Acrobat.exe',   # Adobe Acrobat
+            'msedge.exe',    # Microsoft Edge
+            'chrome.exe',    # Google Chrome
+            'firefox.exe'    # Firefox
+        ]
+        
+        for viewer in pdf_viewers:
+            try:
+                subprocess.run([viewer, file_path], 
+                             check=True, timeout=10,
+                             stdout=subprocess.DEVNULL, 
+                             stderr=subprocess.DEVNULL)
+                print(f"✅ Opened with {viewer}")
+                return True
+            except:
+                continue
+        
+        print("❌ No Windows PDF viewer found")
+        print(f"💡 Manual path: {file_path}")
+        return False
+    
+    def _open_macos(self, file_path: str) -> bool:
+        """Open file on macOS"""
+        try:
+            subprocess.run(['open', file_path], check=True, timeout=10)
+            print("✅ Opened with macOS default app")
+            return True
+        except Exception as e:
+            print(f"❌ macOS open failed: {e}")
+            return False
+    
+    def _open_linux(self, file_path: str) -> bool:
+        """Open file on Linux"""
+        # Method 1: xdg-open (most reliable)
+        if shutil.which('xdg-open'):
+            try:
+                subprocess.run(['xdg-open', file_path], 
+                             check=True, timeout=10,
+                             stdout=subprocess.DEVNULL, 
+                             stderr=subprocess.DEVNULL)
+                print("✅ Opened with xdg-open")
+                return True
+            except:
+                pass
+        
+        # Method 2: Try browsers with file:// protocol
+        browsers = ['firefox', 'google-chrome', 'chromium-browser', 'chromium']
+        file_url = f"file://{file_path}"
+        
+        for browser in browsers:
+            if shutil.which(browser):
+                try:
+                    subprocess.run([browser, file_url], 
+                                 check=False, timeout=10,
+                                 stdout=subprocess.DEVNULL, 
+                                 stderr=subprocess.DEVNULL)
+                    print(f"✅ Opened with {browser}")
+                    return True
+                except:
+                    continue
+        
+        # Method 3: Try PDF viewers
+        pdf_viewers = ['evince', 'okular', 'atril', 'zathura', 'mupdf']
+        
+        for viewer in pdf_viewers:
+            if shutil.which(viewer):
+                try:
+                    subprocess.run([viewer, file_path], 
+                                 check=False, timeout=10,
+                                 stdout=subprocess.DEVNULL, 
+                                 stderr=subprocess.DEVNULL)
+                    print(f"✅ Opened with {viewer}")
+                    return True
+                except:
+                    continue
+        
+        print("❌ No Linux PDF viewer found")
+        print("💡 Install: xdg-open, firefox, or evince")
+        print(f"💡 Manual path: {file_path}")
+        return False
+    
     def get_resume_info(self, resume_id: str):
-        """get basic resume info"""
+        """Get basic resume info"""
         return self.repo.get_resume_by_id(resume_id)
     
     def validate_cv_file(self, resume_id: str) -> bool:
-        """validate cv file exists"""
+        """Validate CV file exists"""
         resume = self.repo.get_resume_by_id(resume_id)
         if not resume:
             return False
         
-        file_path = resume.file_path
-        
-        # check direct path
-        if os.path.exists(file_path) and os.path.isfile(file_path):
-            return True
-        
-        # check relative to project root
-        project_root = Path(__file__).parent.parent.parent
-        full_path = project_root / file_path
-        return full_path.exists() and full_path.is_file()
+        return self._resolve_file_path(resume.file_path) is not None
     
     def get_cv_preview(self, resume_id: str, max_length: int = 500) -> Optional[str]:
-        """get cv text preview"""
+        """Get CV text preview"""
         cv_text = self.get_cv_text(resume_id)
         if not cv_text:
             return None
